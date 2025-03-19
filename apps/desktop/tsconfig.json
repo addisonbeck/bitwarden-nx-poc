@@ -1,0 +1,12 @@
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  }
+}
