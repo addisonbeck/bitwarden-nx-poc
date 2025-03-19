@@ -1,0 +1,5 @@
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension PoC"
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cli",
+  "projectType": "application",
+  "sourceRoot": "apps/cli/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/cli",
+        "webpackConfig": "apps/cli/webpack.config.js",
+        "tsConfig": "apps/cli/tsconfig.json",
+        "main": "apps/cli/src/index.ts",
+        "target": "node",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
+    "start": {
+      "executor": "@nx/js:node", 
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "cli:build",
+      },
+      "configurations": {
+         "development": {
+           "buildTarget": "cli:build:development"
+         },
+         "production": {
+           "buildTarget": "cli:build:production"
+         }
+      }
+    }
+  }
+}

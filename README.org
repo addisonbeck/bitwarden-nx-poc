@@ -1,0 +1,3014 @@
+* Bitwarden Nx PoC
+This repository acts as a demonstration of what an effort to introduce Nx to the Bitwarden =clients= monorepo could look like. This PoC serves a few purposes:
+
+1. It allows developers working on the Nx implementation to see the "full picture" before writing any changes to =clients=.
+2. It serves as a planning tool during pre-development for the purpose of requirements gathering and knowledge assimalation.
+3. It serves as documentation to aid engineers working in =clients= in adapting to and understanding the changes involved in the converstion.
+4. During the development of introducing Nx to =clients= this repository can be used as a playground for experimentation.
+
+** ToC
+:PROPERTIES:
+:TOC: :depth 3 :include siblings :force (nothing) :ignore (nothing) :local (nothing)
+:END:
+:CONTENTS:
+- [[#how-to-use-this-poc][How to Use This PoC]]
+- [[#whats-nx-why-are-we-introducing-nx-to-the-monorepo][What's Nx? Why are we introducing Nx to the monorepo?]]
+- [[#key-terms][Key Terms]]
+- [[#briefly-looking-ahead-to-the-clients-migration][Briefly Looking Ahead To The clients Migration]]
+  - [[#open-questions][Open Questions]]
+  - [[#things-to-follow-up-on-post-migration][Things To Follow Up On Post Migration]]
+  - [[#suggested-conversion-order-for-libs][Suggested Conversion Order For libs]]
+- [[#reading-the-commits][Reading the Commits]]
+  - [[#commit-1-setting-up-the-hello-world-monorepository][Commit 1: Setting up the "hello world" monorepository]]
+    - [[#setting-up-the-project-root][Setting up the project root]]
+    - [[#setting-up-libs][Setting up /libs/]]
+    - [[#setting-up-apps][Setting up /apps/]]
+  - [[#commits-2-through-12-converting-to-nx][Commits 2 through 12: Converting to nx]]
+    - [[#style-guide-for-migration-commits][Style Guide For Migration Commits]]
+    - [[#commits-2-through-6-initializing-the-nx-workspace][Commits 2 through 6: Initializing the Nx Workspace]]
+    - [[#commits-7-through-8-converting-libs-projects-to-nx-projects][Commits 7 through 8: Converting libs projects to Nx projects]]
+    - [[#commit-9-through-12--convert-applications-to-nx-projects][Commit 9 through 12:  Convert Applications to Nx Projects]]
+- [[#references][References]]
+:END:
+
+** How to Use This PoC
+
+For starters: sorry for changing all the commands you're used to running every day! Please be excited.
+
+If you just want to know what the point of this all is and what the new commands to use are please reference the [[#whats-nx-why-are-we-introducing-nx-to-the-monorepo][TL;DR]]. If you'd like to know a bit more than that, like how to answer the question "What the heck is en executor??" please check out the [[#key-terms][Key Terms]] section. After that, if you don't care about the active development state of the migration, you can stop reading. You should have all the information you need to continue building your local projects.
+
+If you want to know more of the details about the active development work to introduce Nx, or you are a developer working on the Nx migration, you should take a look at the commit log. The initial commit builds a "hello world" implementation of the =clients= monorepo. Subsequent commits show an incremental conversion to using Nx.
+
+It is the hope of this project that these steps can be followed nearly 1:1 for implementing Nx in the true monorepository.
+
+It is important to remember that this PoC is not comprehensive in its accounting of all the quirks in the monorepo. The open questions list is long, and unforeseen dangers await anyone using this PoC as a tool to implement Nx in the monorepo. To that end, anyone using it this way would be wise to /read the entire commit log/ before beginning development. =browser= is the most complicated representation of an app in this PoC, but =web= on the monorepo is likely going to be more complex than =browser= in the PoC.
+
+** What's Nx? Why are we introducing Nx to the monorepo?
+
+Nx is a build system and set of developer tools designed specifically for monorepo development. It helps manage complex JavaScript/TypeScript projects that contain multiple applications and libraries within a single repository.
+
+Key features of Nx we are looking to take advantage of (right now) include:
+
+- *Unified Commands:* Instead of =cd=-ing into specific app/lib directories and running =npm run build=, you'll run commands like =nx serve web --configuration=bit=, =nx build desktop=, and =nx test common= from the *repository root*.
+- *Build Caching:* Nx automatically caches build results. If code and dependencies haven't changed, subsequent builds will be significantly faster, often restoring results from cache instantly. Nix stores caches in =./.nx/=.
+- *Project Configuration:* Each app and library gets a =project.json= file defining its build targets (like =build=, =serve=, =lint=) and dependencies. This replaces many scripts previously defined in individual =package.json= files.
+- *Dependency Management:* Each lib and app are now more independent *projects*. Nx understands the dependencies between projects. Running =nx build web --configuration=bit= will automatically build =libs/common= and =libs/angular= first if needed. You can visualize this with =nx graph=.
+
+Platform believes introducing Nx will provide improved build efficiency, promote consistent patterns across libs, enable a simpler development workflow, and make it easier to understand and navigate the codebase.
+
+** Key Terms
+- *nx.json*: The primary configuration file for the Nx workspace, located at the root. It defines global settings, installed plugins, workspace layout information, default caching behavior, and target defaults that apply across multiple projects.
+- *project.json*: A configuration file located within each project's directory (e.g., =apps/web/project.json=). It defines the *targets* (tasks) that can be run on that specific project, the *executors* used to run those targets, and any project-specific options or configurations.
+- *Target*: A specific task or operation that can be performed on an Nx project, defined within its =project.json= file. Common examples include =build=, =serve= (for running a dev server), =lint=, and =test=. Targets are executed using commands like =nx <target> <project-name>= (e.g., =nx build web=).
+- *Executor*: The piece of code responsible for performing the action defined by a *target*. Executors are typically provided by Nx plugins (e.g., =@nx/webpack:webpack= for running Webpack builds, =@nx/js:tsc= for running the TypeScript compiler, =@nx/run-commands:run-commands= for running arbitrary shell commands). The executor to use for a target is specified in =project.json=.
+- *Plugin*: An npm package that extends Nx's capabilities, often providing *executors* and *generators* for specific technologies or tasks (e.g., =@nx/webpack=, =@nx/angular=, =@nx/node=, =@nx/eslint=). Plugins are configured in =nx.json=.
+- *Generator*: A script, often provided by an Nx *plugin*, that scaffolds code or configuration within the workspace (e.g., creating a new application or library skeleton, adding a component, setting up testing).
+- *Configuration* (Target Configuration): A named set of overrides for a target's default options, defined within the =configurations= block of a target in =project.json=. This allows running the same target with different settings (e.g., =development= vs. =production= builds, or the different browser/manifest builds for =apps/browser=). Accessed via the =--configuration= flag (e.g., =nx build browser --configuration=chrome-mv3=).
+
+** Briefly Looking Ahead To The =clients= Migration
+*** Open Questions
+
+Here are some questions that have not been resolved yet that need to be before this PoC can be considered complete:
+
+1. What's the best order of conversion for Bitwarden's projects?
+2. How will we handle circular dependencies if they come up?
+3. Does the safari extension build being a part of desktop create issues?
+4. Do we still need =libs/shared/tsconfig.json= at the end of this work?
+5. What amount of complixity do the different license based targets bring?
+6. The web app builds for https in dev. Is this simple to get working with Nx?
+8. Will the native rust code in desktop cause issues?
+9. Will the connectors scripts for 2FA integrations cause issues?
+10. Why does the storybook component library have [[*/libs/components/tsconfig.app.json][two tsconfigs?]]
+11. Will storybook cause issues with Nx? It does have its own plugin.
+12. This PoC does not include any CI, but CI is likely going to break during Nx introduction. We are moving around the file location of all build files. These paths will almost certainly need to be updated in automations.
+13. This PoC focuses on using Nx for builds. It stops short of using Nx for linting and tests. Linting is partially implemented but never fully realized here. Will this increased scope bring new challenges?
+
+*** Things To Follow Up On Post Migration
+
+1. Audit the contributing docs
+2. Objectively compare build times in CI
+3. Evaluate adoption and gathering feedback
+4. Do we want to start incorporating Nx's git integrations into our release pipelines?
+5. We should take look at using typescript project references as an enhancement for tsconfig paths. 
+6. Are we going to use [[https://nx.dev/nx-cloud][Nx cloud]]?
+   
+*** Suggested Conversion Order For =libs=
+
+This PoC only has two libs, and they are very simple. The monorepo has much more, and the dependency graph is more complicated. An *uneducated, gut feeling based* recommendation for the order of tackling converting these libs is below. It is possible we'll encounter blockers here. Some can also be done in parallel.
+
+1. =/common=
+2. =/shared=
+3. =/platform=
+4. =/node=
+5. =/components=
+6. =/angular=
+7. =/ui=
+8. =/eslint=
+9. =/key-management=
+10. =/key-management-ui=
+11. =/auth=
+12. =/tools=
+13. =/billing=
+14. =/importer=
+14. =/vault=
+15. =/admin-console=
+    
+** Reading the Commits
+
+These commits are written as a literate org document. With the proper tooling you could follow along, executing each code block, and recreate this repository from scratch. However, it is easy enough to follow along and read through to understand the important data points here and the changes made to them to facilitate Nx.
+
+*** Commit 1: Setting up the "hello world" monorepository
+
+The first commit creates a monorepository that looks and feels like =clients=. It creates a web app, electron app, browser extension, and CLI using much of the same configuration as =clients= (respective to the current date). 
+
+**** Setting up the project root
+***** =/.gitignore=
+
+#+begin_src text :tangle no
+node_modules
+#+end_src
+
+***** =/package.json=
+
+Next we'll initialize the root level =package.json=. It needs to contain all the dependencies from across the project. It also needs to contain build scripts for running each project.
+
+#+begin_src json :tangle no 
+{
+  "name": "bitwarden-clients-poc",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/**/*"
+  ],
+  "scripts": {
+    "lint": "eslint . --cache --cache-strategy content && prettier --check .",
+    "lint:fix": "eslint . --cache --cache-strategy content --fix"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.280",
+    "concurrently": "9.1.2",
+    "copy-webpack-plugin": "12.0.2",
+    "cross-env": "7.0.3",
+    "electron": "34.0.0",
+    "electron-builder": "24.13.3",
+    "electron-log": "5.2.4",
+    "electron-reload": "2.0.0-alpha.1",
+    "electron-store": "8.2.0",
+    "electron-updater": "6.3.9",
+    "html-loader": "5.1.0",
+    "html-webpack-plugin": "5.6.3",
+    "ts-loader": "9.5.2",
+    "tsconfig-paths-webpack-plugin": "4.2.0",
+    "typescript": "5.4.2",
+    "webpack": "5.97.1",
+    "webpack-cli": "6.0.1",
+    "webpack-dev-server": "5.2.0",
+    "webpack-dev-server": "5.2.0",
+    "webpack-node-externals": "3.0.0"
+  },
+  "dependencies": {
+    "@angular/animations": "18.2.13",
+    "@angular/cdk": "18.2.14",
+    "@angular/common": "18.2.13",
+    "@angular/compiler": "18.2.13",
+    "@angular/core": "18.2.13",
+    "@angular/forms": "18.2.13",
+    "@angular/platform-browser": "18.2.13",
+    "@angular/platform-browser-dynamic": "18.2.13",
+    "@angular/router": "18.2.13",
+    "commander": "11.1.0",
+    "node-fetch": "2.6.12",
+    "node-forge": "1.3.1"
+  },
+  "engines": {
+    "node": "~20",
+    "npm": "~10"
+  }
+}
+#+end_src
+
+***** =/tsconfig.json=
+
+Next we'll initilize the root tsconfig.json. It needs to set up targets, paths, and includes.
+
+#+begin_src json :tangle no
+{
+  "compilerOptions": {
+    "strict": false,
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES2016",
+    "module": "ES2020",
+    "lib": ["es5", "es6", "es7", "dom", "ES2021", "ESNext.Disposable"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": false,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"]
+    },
+  },
+  "include": [
+    "apps/web/src/**/*",
+    "libs/*/src/**/*"
+  ]
+}
+#+end_src
+
+**** Setting up =/libs/=
+=libs= is a core component of the bitwarden monorepo and holds all shared code across clients. This directory holds independently buildable libraries that may have some level of dependency on one another. We've stubbed out a few examples for the PoC, but this isn't a 1:1 recreation of =clients=.
+***** =/libs/shared/=
+****** =/libs/shared/tsconfig.json=
+
+Libs maintains a parent =tsconfig.json= that is inheritted by others. 
+
+#+begin_src json :tangle no
+{
+  "compilerOptions": {
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES6",
+    "module": "es2020",
+    "lib": ["es5", "es6", "es7", "dom"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "dist",
+    "plugins": [
+      {
+        "name": "typescript-strict-plugin"
+      }
+    ]
+  }
+}
+#+end_src
+
+***** =/libs/common/=
+****** =/libs/common/package.json=
+
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/common",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0",
+  "scripts": {
+    "build": "npm run clean && tsc"
+  }
+}
+#+end_src
+
+****** =/libs/common/tsconfig.json=
+
+#+begin_src json :tangle no
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/libs/common/common.service.ts=
+
+#+begin_src ts :tangle libs/common/common.service.ts :mkdirp yes
+export class CommonService {
+  getMessage(lib: string = "common"): string {
+    return `Hello from the ${lib} library!`;
+  }
+}
+#+end_src
+
+***** =/libs/angular/=
+****** =/libs/angular/package.json=
+
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/angular",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
+    "build:watch": "npm run clean && tsc -watch"
+  }
+}
+#+end_src
+
+****** =/libs/angular/tsconfig.json=
+
+#+begin_src json :tangle no
+{
+  "extends": "../shared/tsconfig",
+  "compilerOptions": {
+    "paths": {
+      "@bitwarden/common/*": ["../common/src/*"]
+    }
+  },
+  "include": ["src/**/*", ],
+  "exclude": ["node_modules", "dist"]
+}
+#+end_src
+
+****** =/libs/angular/angular.service.ts=
+
+#+begin_src ts :tangle libs/angular/angular.service.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+export class AngularService {
+  private commonService = new CommonService();
+
+  getMessage(): string {
+    return this.commonService.getMessage("angular");
+  }
+}
+#+end_src
+
+**** Setting up =/apps/=
+***** =/apps/web/=
+
+The end result of this configuration is a build that operates like this:
+
+#+begin_src mermaid :file diagrams/web-pre-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NPM
+    participant Webpack
+    participant TsconfigPathsPlugin as TSPaths Plugin
+    participant TSLoader as ts-loader
+    participant HTMLPlugin as HtmlWebpackPlugin
+
+    User->>NPM: npm run build (in apps/web)
+    activate NPM
+    NPM->>Webpack: Execute webpack
+    activate Webpack
+
+    Webpack->>Webpack: Read apps/web/webpack.config.js
+    Webpack->>Webpack: Identify entry, loaders, plugins
+    Webpack->>TSPaths Plugin: Initialize
+    activate TSPaths Plugin
+    Webpack->>TSLoader: Initialize
+    activate TSLoader
+    Webpack->>HTMLPlugin: Initialize
+    activate HTMLPlugin
+
+    Webpack->>TSPaths Plugin: Request root tsconfig.json paths
+    Note right of TSPaths Plugin: Reads root tsconfig.json
+    TSPaths Plugin-->>Webpack: Provide path mappings
+    deactivate TSPaths Plugin
+
+    Webpack->>TSLoader: Compile entry (src/index.ts)
+    Note right of TSLoader: Reads apps/web/tsconfig.json
+    TSLoader->>Webpack: Request path resolution (e.g., @bitwarden/common)
+    activate TSPaths Plugin
+    Webpack->>TSPaths Plugin: Resolve requested path
+    TSPaths Plugin-->>Webpack: Provide resolved file path
+    deactivate TSPaths Plugin
+    TSLoader->>TSLoader: Compile TS files & imports
+    TSLoader-->>Webpack: Return compiled JS modules
+    deactivate TSLoader
+
+    Webpack->>HTMLPlugin: Process template (src/index.html)
+    Note right of HTMLPlugin: Reads src/index.html
+    HTMLPlugin-->>Webpack: Return processed template content
+    deactivate HTMLPlugin
+
+    Webpack->>Webpack: Bundle JavaScript modules
+    Webpack->>Webpack: Generate final index.html (injecting bundle)
+
+    Note over Webpack: Writes dist/bundle.js & dist/index.html
+    Webpack-->>NPM: Build successful
+    deactivate Webpack
+    NPM-->>User: Build process finished
+    deactivate NPM
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/web-pre-nx.png]]
+
+****** =/apps/web/package.json=
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/web",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "webpack serve"
+  }
+}
+#+end_src
+****** =/apps/web/tsconfig.json=
+#+begin_src json :tangle no
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"],
+    }
+  }
+}
+#+end_src
+
+****** =/apps/web/webpack.config.js=
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/index.ts',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/index.html',
+    }),
+  ],
+  devServer: {
+    static: './dist',
+    hot: true,
+  },
+};
+#+end_src
+
+****** =/apps/web/index.html=
+
+#+begin_src html :tangle apps/web/src/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden Web PoC</title>
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Web</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/web/index.ts=
+
+#+begin_src ts :tangle apps/web/src/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service'
+import { AngularService } from '@bitwarden/angular/angular.service'
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+***** =/apps/cli/=
+
+#+begin_src mermaid :file diagrams/cli-pre-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NPM
+    participant Webpack
+    participant TSPathsPlugin as TSPaths Plugin
+    participant TSLoader as ts-loader
+    participant NodeExternals as webpack-node-externals
+
+    User->>NPM: npm run build (in apps/cli)
+    activate NPM
+    NPM->>Webpack: Execute webpack
+    activate Webpack
+
+    Webpack->>Webpack: Read apps/cli/webpack.config.js
+    Webpack->>Webpack: Identify entry, target: 'node', loaders, plugins, externals
+    Webpack->>TSPathsPlugin: Initialize
+    activate TSPathsPlugin
+    Webpack->>TSLoader: Initialize
+    activate TSLoader
+    Webpack->>NodeExternals: Initialize
+    activate NodeExternals
+
+    Webpack->>TSPathsPlugin: Request root tsconfig.json paths
+    Note right of TSPathsPlugin: Reads root tsconfig.json
+    TSPathsPlugin-->>Webpack: Provide path mappings
+    deactivate TSPathsPlugin
+
+    Webpack->>TSLoader: Compile entry (src/index.ts)
+    Note right of TSLoader: Reads apps/cli/tsconfig.json (module: CommonJS)
+    TSLoader->>Webpack: Request path resolution (e.g., @bitwarden/common) via TSPathsPlugin
+    TSLoader-->>Webpack: Return compiled JS modules
+    deactivate TSLoader
+
+    Webpack->>NodeExternals: Check modules against node_modules
+    NodeExternals-->>Webpack: List modules to exclude
+    deactivate NodeExternals
+
+    Webpack->>Webpack: Bundle JavaScript modules (target: node)
+    Note over Webpack: Excludes external node modules
+
+    Note over Webpack: Writes build/main.js
+    Webpack-->>NPM: Build successful
+    deactivate Webpack
+    NPM-->>User: Build process finished
+    deactivate NPM
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/cli-pre-nx.png]]
+
+****** =/apps/cli/package.json=
+
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/cli",
+  "version": "0.0.1",
+  "description": "Bitwarden CLI PoC",
+  "main": "build/main.js",
+  "scripts": {
+    "build": "webpack",
+    "start": "node build/main.js"
+  }
+}
+#+end_src
+
+****** =/apps/cli/tsconfig.json=
+
+#+begin_src json :tangle no
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "target": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/apps/cli/webpack.config.js=
+
+The CLI webpack configuration is simpler as it's for a Node.js application without browser components.
+
+#+begin_src js :tangle no 
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = {
+  entry: './src/index.ts',
+  target: 'node',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'build'),
+  },
+  externals: [nodeExternals()],
+  node: {
+    __dirname: false,
+    __filename: false,
+  }
+};
+#+end_src
+
+****** =/apps/cli/src/index.ts=
+
+The CLI entrypoint implements a simple command-line interface using Commander, similar to the real Bitwarden CLI.
+
+#+begin_src ts :tangle apps/cli/src/index.ts :mkdirp yes
+import { Command } from 'commander';
+import { CommonService } from '@bitwarden/common/common.service';
+
+const program = new Command();
+const commonService = new CommonService();
+
+program
+  .name('bw')
+  .description('Bitwarden Command-line Interface (Nx PoC)')
+  .version('0.0.1');
+
+program
+  .command('hello')
+  .description('Test connection to libraries')
+  .action(() => {
+    console.log(commonService.getMessage());
+  });
+
+program
+  .command('*', { hidden: true })
+  .action((cmd) => {
+    console.error(`Unknown command: ${cmd}`);
+    program.help();
+  });
+
+program.parse(process.argv);
+
+if (process.argv.length <= 2) {
+  program.help();
+}
+#+end_src
+
+***** =/apps/desktop/=
+
+This diagram shows how the desktop app is built using npm scripts and webpack directly within its own directory before Nx is introduced. Webpack handles both the main and renderer process builds based on the configuration array.
+
+#+begin_src mermaid :file diagrams/desktop-pre-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NPM
+    participant Webpack
+    participant TsconfigPathsPlugin as TSPaths Plugin
+    participant TSLoader as ts-loader
+    participant HTMLPlugin as HtmlWebpackPlugin
+
+    User->>NPM: npm run build (in apps/desktop)
+    activate NPM
+    NPM->>Webpack: Execute webpack
+    activate Webpack
+
+    Webpack->>Webpack: Read apps/desktop/webpack.config.js (exports array)
+    Webpack->>Webpack: Identify two configurations: main & renderer
+
+    %% Main Process Build
+    Webpack->>Webpack: Start Main Process Build (using webpack.main.js)
+    Webpack->>TSPaths Plugin: Initialize (Main)
+    activate TSPaths Plugin
+    Webpack->>TSLoader: Initialize (Main)
+    activate TSLoader
+
+    Webpack->>TSPaths Plugin: Request root tsconfig.json paths
+    Note right of TSPaths Plugin: Reads root tsconfig.json
+    TSPaths Plugin-->>Webpack: Provide path mappings
+    deactivate TSPaths Plugin
+
+    Webpack->>TSLoader: Compile entry (src/main/index.ts)
+    Note right of TSLoader: Reads apps/desktop/tsconfig.json (module: CommonJS)
+    TSLoader->>Webpack: Request path resolution (e.g., @bitwarden/common)
+    activate TSPaths Plugin
+    Webpack->>TSPaths Plugin: Resolve requested path
+    TSPaths Plugin-->>Webpack: Provide resolved file path
+    deactivate TSPaths Plugin
+    TSLoader->>TSLoader: Compile TS files & imports
+    TSLoader-->>Webpack: Return compiled JS module (main)
+    deactivate TSLoader
+
+    Webpack->>Webpack: Bundle main process code
+
+    Note over Webpack: Writes dist/main.js
+
+    %% Renderer Process Build
+    Webpack->>Webpack: Start Renderer Process Build (using webpack.renderer.js)
+    Webpack->>TSPaths Plugin: Initialize (Renderer)
+    activate TSPaths Plugin
+    Webpack->>TSLoader: Initialize (Renderer)
+    activate TSLoader
+    Webpack->>HTMLPlugin: Initialize (Renderer)
+    activate HTMLPlugin
+
+    Webpack->>TSPaths Plugin: Request root tsconfig.json paths
+    TSPaths Plugin-->>Webpack: Provide path mappings
+    deactivate TSPaths Plugin
+
+    Webpack->>TSLoader: Compile entry (src/renderer/index.ts)
+    Note right of TSLoader: Reads apps/desktop/tsconfig.json
+    TSLoader->>Webpack: Request path resolution (e.g., @bitwarden/common, @bitwarden/angular)
+    activate TSPaths Plugin
+    Webpack->>TSPaths Plugin: Resolve requested path
+    TSPaths Plugin-->>Webpack: Provide resolved file path
+    deactivate TSPaths Plugin
+    TSLoader->>TSLoader: Compile TS files & imports
+    TSLoader-->>Webpack: Return compiled JS modules (renderer)
+    deactivate TSLoader
+
+    Webpack->>HTMLPlugin: Process template (src/renderer/index.html)
+    Note right of HTMLPlugin: Reads src/renderer/index.html
+    HTMLPlugin-->>Webpack: Return processed template content
+    deactivate HTMLPlugin
+
+    Webpack->>Webpack: Bundle renderer process code
+    Webpack->>Webpack: Generate final index.html (injecting renderer bundle)
+
+    Note over Webpack: Writes dist/renderer.js & dist/index.html
+
+    Webpack-->>NPM: Both builds successful
+    deactivate Webpack
+    NPM-->>User: Build process finished
+    deactivate NPM
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/desktop-pre-nx.png]]
+
+****** =/apps/desktop/src/package.json=
+
+#+begin_src json :tangle apps/desktop/src/package.json :mkdirp yes
+{
+  "name": "bitwarden-desktop-app",
+  "main": "main.js"
+}
+#+end_src
+
+******* TODO Document the folder structure here, it is different
+
+****** =/apps/desktop/package.json=
+
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/desktop",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "concurrently \"webpack --watch\" \"electron dist\""
+  }
+}
+#+end_src
+
+******* TODO Document that these build commands are more simple than main, and why
+
+****** =/apps/desktop/tsconfig.json=
+#+begin_src json :tangle no
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  }
+}
+#+end_src
+
+****** =/apps/desktop/webpack.main.js=
+#+begin_src js :tangle no 
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/main/index.ts',
+  target: 'electron-main',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+};
+#+end_src
+
+****** =/apps/desktop/webpack.renderer.js=
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/renderer/index.ts',
+  target: 'electron-renderer',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'renderer.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/renderer/index.html',
+    }),
+  ],
+};
+#+end_src
+
+****** =/apps/desktop/webpack.config.js=
+
+This config re-exports the main and renderer configs. This isn't a thing on =main= but is a simple helper here.
+
+#+begin_src js :tangle no
+const mainConfig = require('./webpack.main');
+const rendererConfig = require('./webpack.renderer');
+
+module.exports = [mainConfig, rendererConfig];
+#+end_src
+
+****** =/apps/desktop/src/main/index.ts=
+#+begin_src ts :tangle apps/desktop/src/main/index.ts :mkdirp yes
+import { app, BrowserWindow } from 'electron';
+import * as path from 'path';
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+let mainWindow: BrowserWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  console.log(commonService.getMessage('desktop-main'));
+}
+
+app.whenReady().then(() => {
+  createWindow();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+#+end_src
+
+****** =/apps/desktop/src/renderer/index.html=
+#+begin_src html :tangle apps/desktop/src/renderer/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden Desktop PoC</title>
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Desktop</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/desktop/src/renderer/index.ts=
+#+begin_src ts :tangle apps/desktop/src/renderer/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+import { AngularService } from '@bitwarden/angular/angular.service';
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+***** =/apps/browser/=
+The browser extension is a complex application that requires special considerations for each browser and different manifest versions.
+
+One important thing to note about the extension: icons are required by browsers. These have been committed directely to the repo and are not tangled from this README.
+
+This diagram shows the pre-Nx build process for the browser extension. Note how environment variables set via =cross-env= control the webpack configuration, determining the target browser, manifest version, and output directory. The manifest transformation happens within the webpack build via =CopyWebpackPlugin= and a custom transformer script.
+
+#+begin_src mermaid :file diagrams/browser-pre-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NPM
+    participant CrossEnv as cross-env
+    participant Webpack
+    participant TSPathsPlugin as TSPaths Plugin
+    participant TSLoader as ts-loader
+    participant HTMLPlugin as HtmlWebpackPlugin
+    participant CopyPlugin as CopyWebpackPlugin
+    participant ManifestTransformer as Manifest Transformer
+
+    User->>NPM: npm run build:chrome (or firefox, etc.)
+    activate NPM
+    NPM->>CrossEnv: Set BROWSER, MANIFEST_VERSION, NODE_ENV
+    activate CrossEnv
+    CrossEnv->>Webpack: Execute webpack (env vars set)
+    deactivate CrossEnv
+    activate Webpack
+
+    Webpack->>Webpack: Read apps/browser/webpack.config.js
+    Webpack->>Webpack: Read env vars (BROWSER, MANIFEST_VERSION, NODE_ENV)
+    Note over Webpack: Determines output path (dist/${BROWSER}), manifest source, mode
+
+    Webpack->>TSPathsPlugin: Initialize (reads ../../tsconfig.json)
+    activate TSPathsPlugin
+    Webpack->>TSLoader: Initialize (reads apps/browser/tsconfig.json)
+    activate TSLoader
+    Webpack->>HTMLPlugin: Initialize
+    activate HTMLPlugin
+    Webpack->>CopyPlugin: Initialize
+    activate CopyPlugin
+
+    Webpack->>TSLoader: Compile entries (background, popup, content)
+    TSLoader->>Webpack: Request path resolution (e.g., @bitwarden/common) via TSPathsPlugin
+    TSLoader-->>Webpack: Return compiled JS modules
+    deactivate TSLoader
+
+    Webpack->>HTMLPlugin: Process template (src/popup/index.html)
+    HTMLPlugin-->>Webpack: Return processed popup.html
+    deactivate HTMLPlugin
+
+    Webpack->>CopyPlugin: Process patterns
+    CopyPlugin->>CopyPlugin: Identify manifest source (manifest.json or manifest.v3.json based on MANIFEST_VERSION env var)
+    CopyPlugin->>ManifestTransformer: Transform manifest content (pass BROWSER env var)
+    activate ManifestTransformer
+    ManifestTransformer-->>CopyPlugin: Return transformed manifest JSON
+    deactivate ManifestTransformer
+    CopyPlugin->>CopyPlugin: Copy images and transformed manifest
+    CopyPlugin-->>Webpack: Assets ready
+
+    Webpack->>Webpack: Bundle JS, Generate HTML, Assemble assets
+    Note over Webpack: Writes to dist/${BROWSER}/ (e.g., dist/chrome/)
+    Webpack-->>NPM: Build successful
+    deactivate Webpack
+    NPM-->>User: Build process finished
+    deactivate NPM
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/browser-pre-nx.png]]
+
+****** =/apps/browser/package.json=
+The package scripts use =cross-env= to set environment variables like =BROWSER= and =MANIFEST_VERSION=, controlling which manifest version and browser-specific settings are used during the build. Firefox defaults to MV2.
+
+#+begin_src json :tangle no
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension PoC",
+  "scripts": {
+    "build": "npm run build:chrome",
+    "build:dev": "cross-env NODE_ENV=development npm run build",
+    "build:prod": "cross-env NODE_ENV=production npm run build",
+    "build:watch": "npm run build:chrome -- --watch",
+
+    "build:chrome": "cross-env BROWSER=chrome MANIFEST_VERSION=3 webpack",
+    "build:watch:chrome": "npm run build:chrome -- --watch",
+
+    "build:firefox": "cross-env BROWSER=firefox webpack",
+    "build:watch:firefox": "npm run build:firefox -- --watch",
+    "build:firefox:mv3": "cross-env BROWSER=firefox MANIFEST_VERSION=3 webpack",
+    "build:watch:firefox:mv3": "npm run build:firefox:mv3 -- --watch",
+
+    "build:edge": "cross-env BROWSER=edge MANIFEST_VERSION=3 webpack",
+    "build:watch:edge": "npm run build:edge -- --watch",
+
+    "build:opera": "cross-env BROWSER=opera MANIFEST_VERSION=3 webpack",
+    "build:watch:opera": "npm run build:opera -- --watch"
+  }
+}
+#+end_src
+
+#+begin_src org
+****** =/apps/browser/tsconfig.json=
+#+begin_src json :tangle no
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    },
+    "types": ["chrome"]
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/apps/browser/webpack.config.js=
+
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const manifest = require('./webpack/manifest'); // Import the transformer
+
+const browser = process.env.BROWSER || 'chrome';
+const isProduction = process.env.NODE_ENV === 'production';
+const manifestVersion = process.env.MANIFEST_VERSION == 3 ? 3 : 2;
+
+console.log(`Building for ${browser}, Manifest Version ${manifestVersion}, Mode: ${isProduction ? 'production' : 'development'}`);
+
+module.exports = {
+  mode: isProduction ? 'production' : 'development',
+  devtool: isProduction ? false : 'eval-source-map', 
+  entry: {
+    background: './src/background/index.ts',
+    popup: './src/popup/index.ts',
+    content: './src/content/index.ts'
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist', browser),
+    filename: '[name].js',
+    clean: true 
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({
+      configFile: '../../tsconfig.json'
+    })]
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        loader: 'ts-loader', 
+        exclude: /node_modules/,
+        options: {
+          configFile: 'tsconfig.json'
+        }
+      },
+      {
+        test: /\.(html)$/,
+        use: 'html-loader'
+      }
+    ]
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/popup/index.html',
+      filename: 'popup.html',
+      chunks: ['popup']
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: manifestVersion === 3 ? './src/manifest.v3.json' : './src/manifest.json',
+          to: 'manifest.json',
+          transform: manifest.transform(browser),
+        },
+        {
+          from: './src/images', 
+          to: 'images'
+        }
+      ]
+    })
+  ],
+};
+#+end_src
+****** =/apps/browser/src/background/index.ts=
+#+begin_src ts :tangle apps/browser/src/background/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+console.log(commonService.getMessage());
+
+chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void) => {
+  if (message.action === 'getHello') {
+    sendResponse({ message: commonService.getMessage('browser-background') });
+  }
+  return true;
+});
+#+end_src
+
+****** =/apps/browser/src/popup/index.html=
+#+begin_src html :tangle apps/browser/src/popup/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Browser Extension</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/browser/src/popup/index.ts=
+#+begin_src ts :tangle apps/browser/src/popup/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+import { AngularService } from '@bitwarden/angular/angular.service';
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+****** =/apps/browser/src/content/index.ts=
+#+begin_src ts :tangle apps/browser/src/content/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+console.log(commonService.getMessage('browser-content'));
+#+end_src
+
+****** =/apps/browser/src/manifest.json=
+This is the base Manifest V2 configuration. It will be used when =MANIFEST_VERSION= is not explicitly set to 3.
+
+#+begin_src json :tangle apps/browser/src/manifest.json :mkdirp yes
+{
+  "manifest_version": 2,
+  "name": "Bitwarden PoC - MV2",
+  "version": "0.0.1",
+  "description": "A secure password manager PoC (MV2).",
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "*://*/*"
+  ],
+  "__firefox__applications": {
+    "gecko": {
+      "id": "poc-mv2@bitwarden.com"
+    }
+  }
+}
+#+end_src
+****** =/apps/browser/webpack/manifest.js=
+This file handles the transformation of manifests for different browsers and versions.
+
+#+begin_src js :tangle apps/browser/webpack/manifest.js :mkdirp yes
+/**
+ * Transform the manifest template into a browser specific manifest.
+ *
+ * We support a simple browser prefix to the manifest keys. Example:
+ *
+ * =json
+ * {
+ *   "name": "Default name",
+ *   "__chrome__name": "Chrome override"
+ * }
+ * =
+ *
+ * Will result in the following manifest:
+ *
+ * =json
+ * {
+ *  "name": "Chrome override"
+ * }
+ * =
+ *
+ * for Chrome.
+ */
+function transform(browser) {
+  return (buffer) => {
+    let manifest = JSON.parse(buffer.toString());
+
+    manifest = transformPrefixes(manifest, browser);
+
+    return JSON.stringify(manifest, null, 2);
+  };
+}
+
+const browsers = ["chrome", "edge", "firefox", "opera", "safari"]; // Add safari if needed later
+
+/**
+ * Flatten the browser prefixes in the manifest.
+ *
+ * - Removes unrelated browser prefixes.
+ * - A null value deletes the non prefixed key.
+ */
+function transformPrefixes(manifest, browser) {
+  const prefix = `__${browser}__`;
+
+  function transformObject(obj) {
+    // Handle null objects gracefully - prevent errors if a browser-specific key holds null
+    if (obj === null) {
+      return null;
+    }
+    return Object.keys(obj).reduce((acc, key) => {
+      // Determine if we need to recurse into the object.
+      const nested = typeof obj[key] === "object" && obj[key] !== null && !Array.isArray(obj[key]);
+
+      if (key.startsWith(prefix)) {
+        const newKey = key.slice(prefix.length);
+
+        // Null values are used to remove keys.
+        if (obj[key] == null) {
+          delete acc[newKey];
+          return acc;
+        }
+
+        acc[newKey] = nested ? transformObject(obj[key]) : obj[key];
+      } else if (!browsers.some((b) => key.startsWith(`__${b}__`))) {
+        // Make sure not to skip recursion if the value is an object
+        acc[key] = nested ? transformObject(obj[key]) : obj[key];
+      }
+
+      return acc;
+    }, {});
+  }
+
+  return transformObject(manifest);
+}
+
+module.exports = {
+  transform,
+};
+#+end_src
+****** =/apps/browser/src/manifest.v3.json=
+This file contains the Manifest V3 specific configuration. The build process selects this file when building for MV3.
+
+#+begin_src json :tangle apps/browser/src/manifest.v3.json :mkdirp yes
+{
+  "manifest_version": 3,
+  "name": "Bitwarden PoC - MV3",
+  "version": "0.0.1",
+  "description": "A secure password manager PoC (MV3).",
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "__firefox__background": {
+     "scripts": ["background.js"]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+   "__firefox__browser_specific_settings": {
+    "gecko": {
+      "id": "poc-mv3@bitwarden.com"
+    }
+  }
+}
+#+end_src
+
+*** Commits 2 through 12: Converting to nx
+
+From this point forward we'll be atomically migrating this repository to Nx and committing after each change. 
+
+**** Style Guide For Migration Commits
+
+These are general guidelines and tips that should be followed while migrating each project. They apply to the clients migration too.
+
+- Verify project dependencies using =nx graph=.
+- Gradually remove the old build scripts from the root =package.json= and individual project =package.json= files as they are replaced by Nx targets.
+- Ensure all original functionality is preserved through Nx commands.
+- Review and fine-tune the =inputs= and =outputs= defined in =nx.json= target defaults and individual =project.json= files for maximum cache effectiveness.
+- Add standard Nx targets like =lint= using =@nx/eslint:lint= for each project.
+- Update documentation in READMEs, CI jobs, and the contributing docs to use the correct commands
+
+**** Commits 2 through 6: Initializing the Nx Workspace
+
+Nx recommends calling =nx init= to get things rolling adding Nx to a repository, but it is the experience of the writer that this command tries to do too much and one time. It's overwhelming even for this small repository, and using it on the monorepo would require way too much juggling to work the first time.
+
+Instead of running =nx init= we will perform a manual, gradual introduction to Nx to the repository through a series of commits that are as atomic as they can be.
+
+***** Commit 2: Updating .gitignore
+
+We'll need to update .gitignore to ignore the .nx folder
+
+#+begin_src text :tangle .gitignore
+node_modules
+.nx
+dist
+#+end_src
+
+***** Commit 3: Add Nx as a dependency
+
+We will start as simple as possible: adding Nx to the root =package.json='s dev dependencies. At the time of writing the latest version of the =nx= package is =20.7.1=. =package.json= now looks like this:
+
+#+begin_src json :tangle no
+{
+  "name": "bitwarden-clients-poc",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/**/*"
+  ],
+  "scripts": {
+    "lint": "eslint . --cache --cache-strategy content && prettier --check .",
+    "lint:fix": "eslint . --cache --cache-strategy content --fix"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.280",
+    "concurrently": "9.1.2",
+    "copy-webpack-plugin": "12.0.2",
+    "cross-env": "7.0.3",
+    "electron": "34.0.0",
+    "electron-builder": "24.13.3",
+    "electron-log": "5.2.4",
+    "electron-reload": "2.0.0-alpha.1",
+    "electron-store": "8.2.0",
+    "electron-updater": "6.3.9",
+    "nx": "20.7.1",
+    "html-loader": "5.1.0",
+    "html-webpack-plugin": "5.6.3",
+    "ts-loader": "9.5.2",
+    "tsconfig-paths-webpack-plugin": "4.2.0",
+    "typescript": "5.4.2",
+    "webpack": "5.97.1",
+    "webpack-cli": "6.0.1",
+    "webpack-dev-server": "5.2.0",
+    "webpack-dev-server": "5.2.0",
+    "webpack-node-externals": "3.0.0"
+  },
+  "dependencies": {
+    "@angular/animations": "18.2.13",
+    "@angular/cdk": "18.2.14",
+    "@angular/common": "18.2.13",
+    "@angular/compiler": "18.2.13",
+    "@angular/core": "18.2.13",
+    "@angular/forms": "18.2.13",
+    "@angular/platform-browser": "18.2.13",
+    "@angular/platform-browser-dynamic": "18.2.13",
+    "@angular/router": "18.2.13",
+    "commander": "11.1.0",
+    "node-fetch": "2.6.12",
+    "node-forge": "1.3.1"
+  },
+  "engines": {
+    "node": "~20",
+    "npm": "~10"
+  }
+}
+#+end_src
+
+***** Commit 4: Create a minimal =nx.json=
+
+Next we'll create a =nx.json= file at the root of the repository. This file tells Nx about the workspace structure and configuration. We'll start with a very basic configuration. It starts with no =targetDefaults=. We will be filling these in as development progresses. Some of the other values are the defaults and are included in the config for verbosity.
+
+#+begin_src json :tangle no
+{
+  "cacheDirectory": ".nx/cache",
+  "defaultBase": "main",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*"],
+    "production": ["!{projectRoot}/**/*.spec.ts"]
+  },
+  "parallel": 4,
+  "targetDefaults": {}
+}
+#+end_src
+
+At this stage it can be asserted that Nx is setup successfully by running =npx nx report=
+
+***** Commit 5: Rename =tsconfig.json= to =tsconfig.base.json=
+
+Nx conventionally uses =tsconfig.base.json= for the root TypeScript configuration that other projects extend, including the root =tsconfig.json=. The root =tsconfig.json= becomes more simple (and often generated) file under Nx. We will be manually creating it during Nx setup later in this commit log, but ideally it would be maintained and added to mostly by Nx generators.
+
+****** Renaming =/tsconfig.json= to =/tsconfig.base.json=
+
+First, we rename the file itself. The content remains the same.
+
+#+begin_src json :tangle tsconfig.base.json 
+{
+  "compilerOptions": {
+    "strict": false,
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES2016",
+    "module": "ES2020",
+    "lib": ["es5", "es6", "es7", "dom", "ES2021", "ESNext.Disposable"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": false,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"]
+    },
+  },
+  "include": [
+    "apps/web/src/**/*",
+    "libs/*/src/**/*"
+  ]
+}
+#+end_src
+
+****** Updating =/libs/common/tsconfig.json=
+
+The =common= library directly extended the root config, so we update its =extends= path.
+
+#+begin_src json :tangle libs/common/tsconfig.json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** Updating =/libs/angular/tsconfig.json=
+
+#+begin_src json :tangle libs/angular/tsconfig.json
+{
+  "extends": "../../tsconfig.base.json", 
+  "compilerOptions": {
+    "outDir": "./dist", 
+    "paths": {
+      "@bitwarden/common/*": ["libs/common/src/*"] 
+    }
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+****** Updating =/apps/web/webpack.config.js=
+
+The =TsconfigPathsPlugin= needs to be explicitly told where the base config file is now, as it defaults to looking for =tsconfig.json=.
+
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/index.ts',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({ configFile: '../../tsconfig.base.json' })], 
+  },
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/index.html',
+    }),
+  ],
+  devServer: {
+    static: './dist',
+    hot: true,
+  },
+};
+#+end_src
+
+****** Updating =/apps/web/tsconfig.json=
+#+begin_src json :tangle apps/web/tsconfig.json
+{
+  "extends": "../../tsconfig.base.json", 
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  }
+}
+#+end_src
+
+****** Updating =/apps/cli/webpack.config.js=
+
+Similar update for the CLI's =TsconfigPathsPlugin=.
+
+#+begin_src js :tangle no
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = {
+  entry: './src/index.ts',
+  target: 'node',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({ configFile: '../../tsconfig.base.json' })], 
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'build'),
+  },
+  externals: [nodeExternals()],
+  node: {
+    __dirname: false,
+    __filename: false,
+  }
+};
+#+end_src
+
+****** Updating =/apps/desktop/webpack.main.js=
+
+Update the desktop main process webpack config's =TsconfigPathsPlugin=.
+
+#+begin_src js :tangle no
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/main/index.ts',
+  target: 'electron-main',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({ configFile: '../../tsconfig.base.json' })], 
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+};
+#+end_src
+
+****** Updating =/apps/desktop/webpack.renderer.js=
+
+Update the desktop renderer process webpack config's =TsconfigPathsPlugin=.
+
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/renderer/index.ts',
+  target: 'electron-renderer',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({ configFile: '../../tsconfig.base.json' })], 
+  },
+  output: {
+    filename: 'renderer.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/renderer/index.html',
+    }),
+  ],
+};
+#+end_src
+
+****** Updating =/apps/browser/webpack.config.js=
+
+The browser webpack config already explicitly referenced the root =tsconfig.json=, so we just update the path.
+
+#+begin_src js :tangle no
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const manifest = require('./webpack/manifest'); // Import the transformer
+
+const browser = process.env.BROWSER || 'chrome';
+const isProduction = process.env.NODE_ENV === 'production';
+const manifestVersion = process.env.MANIFEST_VERSION == 3 ? 3 : 2;
+
+console.log(`Building for ${browser}, Manifest Version ${manifestVersion}, Mode: ${isProduction ? 'production' : 'development'}`);
+
+module.exports = {
+  mode: isProduction ? 'production' : 'development',
+  devtool: isProduction ? false : 'eval-source-map', 
+  entry: {
+    background: './src/background/index.ts',
+    popup: './src/popup/index.ts',
+    content: './src/content/index.ts'
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist', browser),
+    filename: '[name].js',
+    clean: true 
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({
+      configFile: '../../tsconfig.base.json' 
+    })]
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        loader: 'ts-loader', 
+        exclude: /node_modules/,
+        options: {
+          configFile: 'tsconfig.json'
+        }
+      },
+      {
+        test: /\.(html)$/,
+        use: 'html-loader'
+      }
+    ]
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/popup/index.html',
+      filename: 'popup.html',
+      chunks: ['popup']
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: manifestVersion === 3 ? './src/manifest.v3.json' : './src/manifest.json',
+          to: 'manifest.json',
+          transform: manifest.transform(browser),
+        },
+        {
+          from: './src/images', 
+          to: 'images'
+        }
+      ]
+    })
+  ],
+};
+#+end_src
+***** Commit 6: Configure Core Workspace Settings
+Now that the basic Nx setup is in place (dependencies installed, minimal =nx.json=, =tsconfig.base.json= renamed), we need to configure Nx more thoroughly. This involves:
+
+1.  *Installing Nx Plugins:* We'll add plugins like =@nx/webpack= and =@nx/js= which provide the executors needed to build our projects using their existing tools (webpack, tsc). 
+2.  *Configuring =nx.json=:* We'll define workspace-wide settings and, crucially, =targetDefaults=. These defaults specify how common tasks (like =build=) should behave, including how their inputs and outputs are configured for caching. This saves us from repeating the same cache settings in every project.
+3.  *Creating Root =tsconfig.json=:* Nx uses a root =tsconfig.json= primarily for tooling integration (like editor path mapping resolution) and potentially for project references. It typically extends =tsconfig.base.json=.
+
+****** Updating =/package.json=
+
+First, let's add the necessary Nx plugins as development dependencies. You'll notice these all match the latest version of nx itself.
+
+#+begin_src json :tangle package.json
+{
+  "name": "bitwarden-clients-poc",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/**/*"
+  ],
+  "scripts": {
+    "lint": "eslint . --cache --cache-strategy content && prettier --check .",
+    "lint:fix": "eslint . --cache --cache-strategy content --fix"
+  },
+  "devDependencies": {
+    "@nx/eslint": "20.7.1", 
+    "@nx/js": "20.7.1", 
+    "@nx/node": "20.7.1", 
+    "@nx/webpack": "20.7.1",
+    "@types/chrome": "0.0.280",
+    "concurrently": "9.1.2",
+    "copy-webpack-plugin": "12.0.2",
+    "cross-env": "7.0.3",
+    "electron": "34.0.0",
+    "electron-builder": "24.13.3",
+    "electron-log": "5.2.4",
+    "electron-reload": "2.0.0-alpha.1",
+    "electron-store": "8.2.0",
+    "electron-updater": "6.3.9",
+    "nx": "20.7.1",
+    "html-loader": "5.1.0",
+    "html-webpack-plugin": "5.6.3",
+    "ts-loader": "9.5.2",
+    "tsconfig-paths-webpack-plugin": "4.2.0",
+    "typescript": "5.4.2",
+    "wait-on": "8.0.3", 
+    "webpack": "5.97.1",
+    "webpack-cli": "6.0.1",
+    "webpack-dev-server": "5.2.0",
+    "webpack-node-externals": "3.0.0"
+  },
+  "dependencies": {
+    "@angular/animations": "18.2.13",
+    "@angular/cdk": "18.2.14",
+    "@angular/common": "18.2.13",
+    "@angular/compiler": "18.2.13",
+    "@angular/core": "18.2.13",
+    "@angular/forms": "18.2.13",
+    "@angular/platform-browser": "18.2.13",
+    "@angular/platform-browser-dynamic": "18.2.13",
+    "@angular/router": "18.2.13",
+    "commander": "11.1.0",
+    "node-fetch": "2.6.12",
+    "node-forge": "1.3.1"
+  },
+  "engines": {
+    "node": "~20",
+    "npm": "~10"
+  }
+}
+#+end_src
+
+****** Updating =/nx.json=
+
+=targetDefaults= is where we configure caching behavior for common targets like =build=. We specify =inputs= that Nx should track for changes (source files, dependencies) and =outputs= where build artifacts are placed. This allows Nx to restore build results from the cache if inputs haven't changed. We also list the installed plugins availible to Nx.
+
+#+begin_src json :tangle nx.json
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "cacheDirectory": ".nx/cache",
+  "defaultBase": "main",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.spec.ts",
+      "!{projectRoot}/tsconfig.spec.json"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/tsconfig.base.json",
+      "{workspaceRoot}/package.json"
+    ]
+  },
+  "plugins": [
+    {
+      "plugin": "@nx/js",
+      "options": {
+        "compiler": "tsc"
+      }
+    },
+    {
+      "plugin": "@nx/eslint/plugin",
+      "options": {
+          "targetName": "lint"
+      }
+    }
+  ],
+  "parallel": 4,
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{options.outputPath}"],
+      "cache": true
+    },
+    "lint": {
+       "inputs": ["default", "{workspaceRoot}/.eslintrc.json"],
+       "cache": true
+    }
+  }
+}
+#+end_src
+
+Eventually we will want to add the webpack plugin here, but it breaks our gradual approach to do it right now
+
+#+begin_example
+    {
+      "plugin": "@nx/webpack/plugin",
+      "options": {
+        "buildTargetName": "build",
+        "serveTargetName": "serve",
+        "previewTargetName": "preview"
+      }
+    },
+#+end_example
+
+Some notes:
+
+- =$schema=: Provides editor autocompletion and validation.
+- *namedInputs*: Defines reusable sets of files for target inputs. =default= includes all files in a project and shared configuration files. =production= builds upon =default= but excludes test files. =sharedGlobals= includes root files that affect all projects.
+- *plugins*: Registers the installed Nx plugins so Nx can use their capabilities (generators, executors).
+- *targetDefaults*:
+  + Defines default settings for targets across all projects unless overridden in a specific =project.json=.
+  + =build=:
+    - =dependsOn: ["^build"]=: Ensures that a project's dependencies (=^=) are built before the project itself.
+    - =inputs: ["production", "^production"]=: The cache for this target depends on the project's production files (=production= named input) and the production outputs of its dependencies (=^production=).
+    - =outputs: ["{options.outputPath}"]=: Specifies that the output artifacts are placed in the path defined in the target's =options.outputPath= (which we will define in each project's =project.json=). Nx caches these outputs.
+    - =cache: true=: Enables caching for this target.
+  + =lint=: Configures inputs for linting, enabling caching.
+
+****** Creating Root =/tsconfig.json=
+
+Nx uses a root =tsconfig.json= primarily for editor integration and path mapping across the workspace. It should extend our =tsconfig.base.json= but generally shouldn't compile files itself. We're _reintroducing_ tsconfig.json here after renaming our old one to =tsconfig.base.json=
+
+#+begin_src json :tangle tsconfig.json
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"]
+    }
+  },
+  "files": [],
+  "include": [],
+  "references": []
+}
+#+end_src
+
+With these core settings configured, we are now ready to start converting individual libraries and applications into Nx projects in the subsequent commits. We have established the foundation for dependency tracking and build caching.
+
+**** Commits 7 through 8: Converting =libs= projects to Nx projects
+
+In the monorepo proper we have many more libraries with much more complicated dependency graphs. These can likely be worked on in parralel, but with careful timing to best avoid merge conflicts on shared dependencies.
+
+***** Commit 7: Converting =libs/common=
+
+Now we'll convert the first library, =libs/common=, into an Nx project. This involves creating a =project.json= file to define its targets and removing the old build script from its =package.json=.
+
+****** Creating =/libs/common/project.json=
+
+This file tells Nx how to build, test, and lint the =common= library. We define a =build= target using the =@nx/js:tsc= executor, which compiles TypeScript using the project's =tsconfig.json=.
+
+- =outputs=: Specifies where the build artifacts will be placed, relative to the workspace root. Nx uses this for caching.
+- =options=: Configures the executor. We tell it the output path, the main entry point (though less critical for a lib), and which tsconfig file to use.
+- =dependsOn=, =inputs=, and =cache= are inherited from =targetDefaults.build= in =nx.json=.
+
+#+begin_src json :tangle libs/common/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "common",
+  "projectType": "library",
+  "sourceRoot": "libs/common/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/common",
+        "main": "libs/common/src/common.service.ts", 
+        "tsConfig": "libs/common/tsconfig.json",
+        "assets": ["libs/common/*.md"] 
+      }
+    }
+  }
+}
+#+end_src
+
+****** Updating =/libs/common/package.json=
+
+With the build process now managed by Nx via the =build= target in =project.json=, we can remove the original =build= script from the library's =package.json=. The package metadata remains relevant for publishing or identification, but the script is redundant.
+
+#+begin_src json :tangle libs/common/package.json
+{
+  "name": "@bitwarden/common",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0"
+}
+#+end_src
+
+Now you can build this library from the root by running =nx build common=. Nx will use the =@nx/js:tsc= executor as defined in =project.json= and cache the results in =dist/libs/common=. Subsequent builds will be faster if the source code (=libs/common/src/**/*=) and relevant global files (=tsconfig.base.json=, etc., as defined in =nx.json= =namedInputs=) haven't changed.
+***** Commit 8:  Converting =libs/angular=
+
+****** Creating =/libs/angular/project.json=
+
+Nx will automatically detect the dependency on =common= through code analysis and the =dependsOn: ["^build"]= setting in =nx.json='s =targetDefaults= ensures =common= is built first if needed.
+
+#+begin_src json :tangle libs/angular/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "angular",
+  "projectType": "library",
+  "sourceRoot": "libs/angular/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/angular",
+        "main": "libs/angular/src/angular.service.ts",
+        "tsConfig": "libs/angular/tsconfig.json",
+        "assets": ["libs/angular/*.md"] 
+      }
+    }
+  }
+}
+#+end_src
+
+****** Updating =/libs/angular/package.json=
+
+We remove the =scripts= section as Nx now handles the build process via the =build= target defined in =project.json=.
+
+#+begin_src json :tangle libs/angular/package.json
+{
+  "name": "@bitwarden/angular",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0"
+}
+#+end_src
+
+We can assert that things are working as expected up to this point by running =npx nx build angular=.
+
+**** Commit 9 through 12:  Convert Applications to Nx Projects 
+
+Now we can start converting applications. This involves creating its =project.json= and updating its =package.json= to remove the redundant build scripts. Most projects has individual needs to consider as well.
+
+These commits are ordered based on anticipated difficulty. They could technically be done in any order or in parallel.
+
+***** Commit 9: =web=
+
+We will use the =@nx/webpack:webpack= executor for the =build= target and =@nx/webpack:dev-server= for the =serve= target. These executors are designed to work with existing webpack configurations.
+
+This diagram demonstrates the way the build chain is changed from the original after the inclusion of Nx
+
+#+begin_src mermaid :file diagrams/web-post-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NxCLI as Nx CLI
+    participant NxCache as Nx Cache
+    participant DepBuilds as Dependency Builds
+    participant WebpackExecutor as @nx/webpack Executor
+    participant Webpack
+    participant PluginsLoaders as Webpack Plugins/Loaders
+
+    User->>NxCLI: nx build web
+    activate NxCLI
+
+    NxCLI->>NxCLI: Identify project 'web'
+    NxCLI->>NxCLI: Read apps/web/project.json
+
+    %% Dependency Check/Build
+    NxCLI->>NxCLI: Analyze Dependencies (libs/common, libs/angular)
+    NxCLI->>DepBuilds: Ensure Dependencies Built/Cached
+    activate DepBuilds
+    Note over DepBuilds: Checks cache or triggers builds
+    DepBuilds-->>NxCLI: Dependencies Ready (Outputs Available)
+    deactivate DepBuilds
+
+    %% Target Cache Check
+    NxCLI->>NxCache: Check Cache for web:build (inputs hash)
+
+    alt Cache Hit
+        activate NxCache
+        NxCache-->>NxCLI: Cache Hit Found
+        deactivate NxCache
+        NxCLI->>NxCLI: Restore dist/apps/web from Cache
+        NxCLI-->>User: Build Successful (from cache)
+    else Cache Miss
+        activate NxCache
+        NxCache-->>NxCLI: Cache Miss
+        deactivate NxCache
+
+        %% Invoke Executor
+        NxCLI->>WebpackExecutor: Invoke build target
+        activate WebpackExecutor
+
+        %% Executor Runs Webpack
+        WebpackExecutor->>Webpack: Run build (using apps/web/webpack.config.js)
+        activate Webpack
+        Webpack->>PluginsLoaders: Use ts-loader, HtmlWebpackPlugin, TsconfigPathsPlugin
+        activate PluginsLoaders
+        PluginsLoaders->>Webpack: Read tsconfig.json, index.html, tsconfig.base.json
+        PluginsLoaders-->>Webpack: Processed code/assets
+        deactivate PluginsLoaders
+
+        Webpack->>Webpack: Compile TS, Resolve Paths, Bundle JS, Generate HTML
+        Note right of Webpack: Uses dependency outputs provided by Nx
+        Webpack-->>WebpackExecutor: Build artifacts generated (in cache/temp location)
+        deactivate Webpack
+
+        WebpackExecutor-->>NxCLI: Execution Complete (Outputs Ready)
+        deactivate WebpackExecutor
+
+        %% Nx Finalizes
+        NxCLI->>NxCLI: Copy artifacts to dist/apps/web
+        NxCLI->>NxCache: Store results in Cache
+        activate NxCache
+        NxCache-->>NxCLI: Cache Updated
+        deactivate NxCache
+        NxCLI-->>User: Build Successful (executed)
+    end
+    deactivate NxCLI
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/web-post-nx.png]]
+
+****** Creating =/apps/web/project.json=
+This file defines the =web= application as an Nx project.
+
+- =build= target:
+  - Uses =@nx/webpack:webpack=.
+  - Specifies the =webpackConfig= path.
+  - Sets the =outputPath= which Nx uses for caching and placing build artifacts. Note that the =output.path= in =webpack.config.js= determines the *final* output structure within this directory.
+  - =dependsOn= and =inputs= are inherited from =targetDefaults= in =nx.json=, ensuring library dependencies are built first and caching is enabled based on source files and dependency outputs.
+- =serve= target:
+  - Uses =@nx/webpack:dev-server=.
+  - Specifies the =buildTarget= as =web:build= so it knows what to build and serve.
+
+#+begin_src json :tangle apps/web/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "web",
+  "projectType": "application",
+  "sourceRoot": "apps/web/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/web",
+        "webpackConfig": "apps/web/webpack.config.js",
+        "tsConfig": "apps/web/tsconfig.json",
+        "main": "apps/web/src/index.ts"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/webpack:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "web:build",
+        "hmr": true
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "web:build:development"
+        },
+        "production": {
+          "buildTarget": "web:build:production",
+          "hmr": false
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+****** Updating =/apps/web/package.json=
+We remove the =build= and =build:watch= scripts, as these are now handled by =nx build web= and =nx serve web= respectively.
+
+#+begin_src json :tangle apps/web/package.json
+{
+  "name": "@bitwarden/web",
+  "version": "0.0.1"
+}
+#+end_src
+
+****** Updating =/apps/web/webpack.config.js=
+
+Now that we run commands from the workspace root the paths used in configuration files all need to be relative to the project root as well.
+
+Also: output paths are now managed by Nx through the =project.json= =options.outputPath=
+
+#+begin_src js :tangle apps/web/webpack.config.js
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: 'apps/web/src/index.ts', 
+  mode: 'development', 
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        loader: 'ts-loader',
+        exclude: /node_modules/
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin({
+      configFile: 'tsconfig.base.json' 
+    })],
+  },
+  output: {
+    filename: 'bundle.js',
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: 'apps/web/src/index.html', 
+    }),
+  ],
+};
+#+end_src
+
+
+With these changes, you can now run:
+- =nx build web= (or =nx build web --configuration=production=)
+- =nx serve web= (or =nx serve web --configuration=development=)
+***** Commit 10: =cli=
+
+This diagram demonstrates the way the build chain is changed from the original after the inclusion of Nx
+
+#+begin_src mermaid :file diagrams/cli-post-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NxCLI as Nx CLI
+    participant NxCache as Nx Cache
+    participant DepBuilds as Dependency Builds
+    participant WebpackExecutor as @nx/webpack Executor
+    participant Webpack
+    participant PluginsExternals as Webpack Plugins/Externals
+
+    User->>NxCLI: nx build cli
+    activate NxCLI
+
+    NxCLI->>NxCLI: Identify project 'cli'
+    NxCLI->>NxCLI: Read apps/cli/project.json
+
+    %% Dependency Check/Build
+    NxCLI->>NxCLI: Analyze Dependencies (e.g., libs/common)
+    NxCLI->>DepBuilds: Ensure Dependencies Built/Cached
+    activate DepBuilds
+    Note over DepBuilds: Checks cache or triggers builds (common)
+    DepBuilds-->>NxCLI: Dependencies Ready (Outputs Available)
+    deactivate DepBuilds
+
+    %% Target Cache Check
+    NxCLI->>NxCache: Check Cache for cli:build (inputs hash)
+
+    alt Cache Hit
+        activate NxCache
+        NxCache-->>NxCLI: Cache Hit Found
+        deactivate NxCache
+        NxCLI->>NxCLI: Restore dist/apps/cli from Cache
+        NxCLI-->>User: Build Successful (from cache)
+    else Cache Miss
+        activate NxCache
+        NxCache-->>NxCLI: Cache Miss
+        deactivate NxCache
+
+        %% Invoke Executor
+        NxCLI->>WebpackExecutor: Invoke build target
+        activate WebpackExecutor
+
+        %% Executor Runs Webpack
+        WebpackExecutor->>Webpack: Run build (using apps/cli/webpack.config.js)
+        activate Webpack
+        Webpack->>Webpack: Read config (target: 'node', externals)
+        Webpack->>PluginsExternals: Use ts-loader, TsconfigPathsPlugin, webpack-node-externals
+        activate PluginsExternals
+        PluginsExternals->>Webpack: Read tsconfigs, handle paths, identify externals
+        PluginsExternals-->>Webpack: Processed code/info
+        deactivate PluginsExternals
+
+        Webpack->>Webpack: Compile TS, Resolve Paths, Bundle JS (target: node), Exclude externals
+        Note right of Webpack: Uses dependency outputs provided by Nx
+        Webpack-->>WebpackExecutor: Build artifacts generated (in cache/temp location)
+        deactivate Webpack
+
+        WebpackExecutor-->>NxCLI: Execution Complete (Outputs Ready)
+        deactivate WebpackExecutor
+
+        %% Nx Finalizes
+        NxCLI->>NxCLI: Copy artifacts to dist/apps/cli
+        NxCLI->>NxCache: Store results in Cache
+        activate NxCache
+        NxCache-->>NxCLI: Cache Updated
+        deactivate NxCache
+        NxCLI-->>User: Build Successful (executed)
+    end
+    deactivate NxCLI
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/cli-post-nx.png]]
+
+****** Creating =/apps/cli/project.json=
+- =build= target: Uses =@nx/webpack:webpack= executor, pointing to the existing config. The =outputPath= is set for Nx caching and artifact placement. Caching and dependency (=dependsOn=) settings are inherited from =targetDefaults= in =nx.json=.
+- =start= target: Uses =@nx/node:node= executor to run the built application. It specifies =buildTarget= so Nx ensures the project is built before running.
+
+#+begin_src json :tangle apps/cli/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cli",
+  "projectType": "application",
+  "sourceRoot": "apps/cli/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/cli",
+        "webpackConfig": "apps/cli/webpack.config.js",
+        "tsConfig": "apps/cli/tsconfig.json",
+        "main": "apps/cli/src/index.ts",
+        "target": "node",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
+    "start": {
+      "executor": "@nx/js:node", 
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "cli:build",
+      },
+      "configurations": {
+         "development": {
+           "buildTarget": "cli:build:development"
+         },
+         "production": {
+           "buildTarget": "cli:build:production"
+         }
+      }
+    }
+  }
+}
+#+end_src
+
+****** Updating =/apps/cli/package.json=
+
+We remove the =scripts= section entirely, as Nx now manages the build (=nx build cli=) and execution (=nx start cli= or =nx run cli:start=) through the targets defined in =project.json=. The =main= field points to the output within the build directory, which is still relevant if someone were to consume this package directly, although less so in the context of Nx commands.
+
+#+begin_src json :tangle apps/cli/package.json
+{
+  "name": "@bitwarden/cli",
+  "version": "0.0.1",
+  "description": "Bitwarden CLI PoC",
+  "main": "build/main.js"
+}
+#+end_src
+
+****** Updating =/apps/cli/webpack.config.js=
+
+#+begin_src js :tangle apps/cli/webpack.config.js
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = (config, context) => { 
+  const absoluteOutputPath = path.resolve(context.context.root, context.options.outputPath);
+
+  return {
+    entry: 'apps/cli/src/index.ts',
+    target: 'node',
+    mode: context.configurationName === 'production' ? 'production' : 'development', 
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          loader: 'ts-loader',
+          exclude: /node_modules/,
+          options: {
+            configFile: 'apps/cli/tsconfig.json' 
+          }
+        },
+      ],
+    },
+    resolve: {
+      extensions: ['.ts', '.js'],
+      plugins: [new TsconfigPathsPlugin({ configFile: 'tsconfig.base.json' })],
+    },
+    output: {
+      path: absoluteOutputPath, 
+      filename: 'main.js'      
+    },
+    externals: [
+      nodeExternals({
+        modulesDir: "../../node_modules",
+        allowlist: [/@bitwarden/],
+      }),
+    ],
+    node: {
+      __dirname: false,
+      __filename: false,
+    }
+  };
+};
+#+end_src
+
+***** Commit 11: =desktop=
+Key changes:
+- A =project.json= file is created to define Nx targets.
+- The =build= target uses the =@nx/webpack:webpack= executor, leveraging the existing webpack configuration array (=webpack.config.js= which imports =webpack.main.js= and =webpack.renderer.js=). Nx's caching and dependency tracking (=common=, =angular=) are automatically applied.
+- The =serve= target uses =@nx/run-commands= to replicate the previous =concurrently= behavior. It runs the Nx build in watch mode alongside launching the Electron application once the initial build is complete (using =wait-on=).
+- Webpack configurations are updated to use root-relative paths and accept the output path from the Nx context.
+- The original build scripts are removed from =apps/desktop/package.json=.
+
+This diagram demonstrates the way the build chain is changed from the original after the inclusion of Nx
+
+#+begin_src mermaid :file diagrams/desktop-post-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NxCLI as Nx CLI
+    participant NxCache as Nx Cache
+    participant DepBuilds as Dependency Builds
+    participant WebpackExecutor as @nx/webpack Executor
+    participant Webpack
+    participant PluginsLoaders as Webpack Plugins/Loaders
+
+    User->>NxCLI: nx build desktop
+    activate NxCLI
+
+    NxCLI->>NxCLI: Identify project 'desktop'
+    NxCLI->>NxCLI: Read apps/desktop/project.json
+
+    %% Dependency Check/Build
+    NxCLI->>NxCLI: Analyze Dependencies (libs/common, libs/angular)
+    NxCLI->>DepBuilds: Ensure Dependencies Built/Cached
+    activate DepBuilds
+    Note over DepBuilds: Checks cache or triggers builds (common, angular)
+    DepBuilds-->>NxCLI: Dependencies Ready (Outputs Available)
+    deactivate DepBuilds
+
+    %% Target Cache Check
+    NxCLI->>NxCache: Check Cache for desktop:build (inputs hash)
+
+    alt Cache Hit
+        activate NxCache
+        NxCache-->>NxCLI: Cache Hit Found
+        deactivate NxCache
+        NxCLI->>NxCLI: Restore dist/apps/desktop from Cache
+        NxCLI-->>User: Build Successful (from cache)
+    else Cache Miss
+        activate NxCache
+        NxCache-->>NxCLI: Cache Miss
+        deactivate NxCache
+
+        %% Invoke Executor
+        NxCLI->>WebpackExecutor: Invoke build target
+        activate WebpackExecutor
+
+        %% Executor Runs Webpack (handling config array)
+        WebpackExecutor->>Webpack: Run build (using apps/desktop/webpack.config.js)
+        activate Webpack
+        Webpack->>Webpack: Read configuration array (main & renderer)
+
+        %% Main Process Build (within Webpack run)
+        Webpack->>Webpack: Start Main Build
+        Webpack->>PluginsLoaders: Use ts-loader, TsconfigPathsPlugin (Main)
+        activate PluginsLoaders
+        PluginsLoaders->>Webpack: Read tsconfig.json, tsconfig.base.json
+        PluginsLoaders-->>Webpack: Processed code (main)
+        deactivate PluginsLoaders
+        Webpack->>Webpack: Bundle main.js
+        Note right of Webpack: Uses dependency outputs provided by Nx
+
+        %% Renderer Process Build (within Webpack run)
+        Webpack->>Webpack: Start Renderer Build
+        Webpack->>PluginsLoaders: Use ts-loader, TsconfigPathsPlugin, HtmlWebpackPlugin (Renderer)
+        activate PluginsLoaders
+        PluginsLoaders->>Webpack: Read tsconfig.json, tsconfig.base.json, index.html
+        PluginsLoaders-->>Webpack: Processed code/assets (renderer)
+        deactivate PluginsLoaders
+        Webpack->>Webpack: Bundle renderer.js, Generate index.html
+        Note right of Webpack: Uses dependency outputs provided by Nx
+
+        Webpack-->>WebpackExecutor: Build artifacts generated (in cache/temp location)
+        deactivate Webpack
+
+        WebpackExecutor-->>NxCLI: Execution Complete (Outputs Ready)
+        deactivate WebpackExecutor
+
+        %% Nx Finalizes
+        NxCLI->>NxCLI: Copy artifacts to dist/apps/desktop
+        NxCLI->>NxCache: Store results in Cache
+        activate NxCache
+        NxCache-->>NxCLI: Cache Updated
+        deactivate NxCache
+        NxCLI-->>User: Build Successful (executed)
+    end
+    deactivate NxCLI
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/desktop-post-nx.png]]
+
+****** Creating =/apps/desktop/project.json=
+Defines the =build= and =serve= targets for the desktop app.
+
+- =build=: Uses =@nx/webpack:webpack= executor.
+  - =options.outputPath=: Sets the output directory managed by Nx.
+  - =options.webpackConfig=: Points to the existing config file.
+  - =options.tsConfig=: Specifies the project's tsconfig.
+  - =options.main=: Entry point hint (less critical here).
+  - Caching and dependency handling are inherited from =targetDefaults=.
+- =serve=: Uses @nx/run-commands:run-commands=.
+  - Runs two commands in parallel:
+    1.  =nx build desktop --watch=: Executes the =build= target in watch mode.
+    2.  =wait-on ... && electron ...=: Waits for the main process bundle to exist, then launches Electron pointing to the output directory.
+  - Requires =wait-on= to be installed.
+
+#+begin_src json :tangle apps/desktop/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "desktop",
+  "projectType": "application",
+  "sourceRoot": "apps/desktop/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/desktop",
+        "webpackConfig": "apps/desktop/webpack.config.js",
+        "tsConfig": "apps/desktop/tsconfig.json",
+        "main": "apps/desktop/src/main/index.ts",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "defaultConfiguration": "development",
+      "options": {
+        "cwd": ".",
+        "parallel": true,
+        "commands": [
+           "nx build desktop --watch --mode=development",
+           "wait-on dist/apps/desktop/main.js && electron dist/apps/desktop"
+        ],
+        "readyWhen": "Watching for file changes..." 
+      },
+       "configurations": {
+         "development": {},
+         "production": {
+            "commands": [
+               "nx build desktop --watch --mode=production",
+               "wait-on dist/apps/desktop/main.js && electron dist/apps/desktop"
+            ]
+         }
+      }
+    }
+  }
+}
+#+end_src
+
+****** Updating =/apps/desktop/package.json=
+The original build scripts are no longer needed.
+
+#+begin_src json :tangle apps/desktop/package.json
+{
+  "name": "@bitwarden/desktop",
+  "version": "0.0.1"
+}
+#+end_src
+
+****** Updating =/apps/desktop/webpack.main.js=
+The config is wrapped in a function to receive the Nx context (including =options.outputPath=). Paths are updated to be relative to the workspace root.
+
+#+begin_src js :tangle apps/desktop/webpack.main.js
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin'); 
+
+module.exports = (config, context) => {
+  const absoluteOutputPath = path.resolve(context.context.root, context.options.outputPath);
+
+  return {
+    entry: 'apps/desktop/src/main/index.ts', 
+    target: 'electron-main',
+    mode: context.options.mode || 'development', 
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          loader: 'ts-loader',
+          exclude: /node_modules/,
+          options: {
+            configFile: 'apps/desktop/tsconfig.json' 
+          }
+        },
+      ],
+    },
+    resolve: {
+      extensions: ['.ts', '.js'],
+      plugins: [new TsconfigPathsPlugin({ configFile: 'tsconfig.base.json' })], 
+    },
+    output: {
+      filename: 'main.js',
+      path: absoluteOutputPath, 
+    },
+    plugins: [ 
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: 'apps/desktop/src/package.json', 
+            to: absoluteOutputPath 
+          }
+        ]
+      })
+    ]
+  };
+};
+#+end_src
+
+****** Updating =/apps/desktop/webpack.renderer.js=
+Similarly updated to be a function and use root-relative paths. It uses =context.options.outputPath= for its output and the =HtmlWebpackPlugin=.
+
+#+begin_src js :tangle apps/desktop/webpack.renderer.js
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = (config, context) => {
+  const absoluteOutputPath = path.resolve(context.context.root, context.options.outputPath);
+
+  return {
+    entry: 'apps/desktop/src/renderer/index.ts', 
+    target: 'electron-renderer',
+    mode: context.options.mode || 'development', 
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          loader: 'ts-loader',
+          exclude: /node_modules/,
+          options: {
+            configFile: 'apps/desktop/tsconfig.json' 
+          }
+        },
+        {
+          test: /\.(html)$/,
+          use: 'html-loader'
+        }
+      ],
+    },
+    resolve: {
+      extensions: ['.ts', '.js'],
+      plugins: [new TsconfigPathsPlugin({ configFile: 'tsconfig.base.json' })], 
+    },
+    output: {
+      filename: 'renderer.js',
+      path: absoluteOutputPath, 
+    },
+    plugins: [
+      new HtmlWebpackPlugin({
+        template: 'apps/desktop/src/renderer/index.html', 
+      })
+    ],
+  };
+};
+#+end_src
+
+****** Updating =/apps/desktop/webpack.config.js=
+This file now needs to export a function that receives the Nx context and passes it down to the main and renderer config functions.
+
+#+begin_src js :tangle apps/desktop/webpack.config.js
+const mainConfigFn = require('./webpack.main');
+const rendererConfigFn = require('./webpack.renderer');
+
+module.exports = (config, context) => {
+  const mainConfig = mainConfigFn(config, context);
+  const rendererConfig = rendererConfigFn(config, context);
+  return [mainConfig, rendererConfig];
+};
+#+end_src
+
+***** Commit 12: =browser=
+The browser extension is the most complex conversion due to its multiple build variations (Chrome, Firefox, Edge, Opera, MV2, MV3, dev, prod). We'll leverage Nx's target configurations to manage this complexity.
+
+- Create =apps/browser/project.json=.
+- Define a =build= target using =@nx/webpack:webpack=.
+- Use =configurations= within the =build= target to pass =browser=, =manifestVersion=, and =mode= options to the webpack executor.
+- Update =webpack.config.js= to read these options from the Nx context instead of =process.env= and adjust paths to be relative to the workspace root.
+- Configure =outputs= in =project.json= to point to the base directory; the webpack config will handle the browser-specific subdirectory.
+- Remove build scripts from =package.json=.
+
+This diagram illustrates the browser extension build process after migrating to Nx. The user invokes the build using =nx build browser= with a specific =--configuration=. Nx handles dependency checks and caching. If a build is needed, the =@nx/webpack:webpack= executor is invoked, receiving configuration options (which translate to environment variables or webpack options). Webpack then runs similarly to before, but orchestrated by Nx, using the provided configuration to select the browser target and manifest version. The output is cached by Nx.
+
+#+begin_src mermaid :file diagrams/browser-post-nx.png :results file :scale 3
+sequenceDiagram
+    participant User
+    participant NxCLI as Nx CLI
+    participant NxCache as Nx Cache
+    participant DepBuilds as Dependency Builds
+    participant WebpackExecutor as @nx/webpack Executor
+    participant Webpack
+    participant PluginsLoadersTransformer as Webpack Plugins/Loaders + Transformer
+
+    User->>NxCLI: nx build browser --configuration=chrome-mv3
+    activate NxCLI
+
+    NxCLI->>NxCLI: Identify project 'browser', read project.json
+    NxCLI->>NxCLI: Identify configuration 'chrome-mv3'
+    Note over NxCLI: Configuration defines BROWSER, MANIFEST_VERSION, NODE_ENV or passes them as options
+
+    %% Dependency Check/Build
+    NxCLI->>DepBuilds: Ensure Dependencies Built/Cached (common, angular)
+    activate DepBuilds
+    DepBuilds-->>NxCLI: Dependencies Ready
+    deactivate DepBuilds
+
+    %% Target Cache Check
+    NxCLI->>NxCache: Check Cache for browser:build:chrome-mv3 (inputs hash)
+
+    alt Cache Hit
+        activate NxCache
+        NxCache-->>NxCLI: Cache Hit Found
+        deactivate NxCache
+        NxCLI->>NxCLI: Restore output (e.g., dist/apps/browser) from Cache
+        NxCLI-->>User: Build Successful (from cache)
+    else Cache Miss
+        activate NxCache
+        NxCache-->>NxCLI: Cache Miss
+        deactivate NxCache
+
+        %% Invoke Executor
+        NxCLI->>WebpackExecutor: Invoke build target (passing options/env vars from configuration)
+        activate WebpackExecutor
+
+        %% Executor Runs Webpack
+        WebpackExecutor->>Webpack: Run build (using apps/browser/webpack.config.js, env vars/options set)
+        activate Webpack
+        Webpack->>Webpack: Read configuration (influenced by Executor)
+        Webpack->>PluginsLoadersTransformer: Use ts-loader, HtmlWebpackPlugin, CopyWebpackPlugin (with Manifest Transformer)
+        activate PluginsLoadersTransformer
+        PluginsLoadersTransformer->>Webpack: Read tsconfigs, html, manifest source (selected based on config), transform manifest (using config)
+        PluginsLoadersTransformer-->>Webpack: Processed code/assets
+        deactivate PluginsLoadersTransformer
+
+        Webpack->>Webpack: Compile TS, Resolve Paths, Bundle JS, Generate HTML, Copy Assets
+        Note right of Webpack: Output path & manifest tailored by configuration (e.g., dist/apps/browser for chrome-mv3)
+        Webpack-->>WebpackExecutor: Build artifacts generated (in cache/temp location)
+        deactivate Webpack
+
+        WebpackExecutor-->>NxCLI: Execution Complete (Outputs Ready)
+        deactivate WebpackExecutor
+
+        %% Nx Finalizes
+        NxCLI->>NxCLI: Copy artifacts to defined output path (e.g., dist/apps/browser)
+        NxCLI->>NxCache: Store results in Cache (keyed by configuration and inputs)
+        activate NxCache
+        NxCache-->>NxCLI: Cache Updated
+        deactivate NxCache
+        NxCLI-->>User: Build Successful (executed)
+    end
+    deactivate NxCLI
+#+end_src
+
+#+RESULTS:
+[[file:diagrams/browser-post-nx.png]]
+
+****** Creating =/apps/browser/project.json=
+This =project.json= uses configurations extensively. Each configuration defines the specific =browser=, =manifestVersion=, and =mode= (development/production) for a build variant. These options are passed down to the webpack executor and subsequently to the =webpack.config.js= function.
+
+- =outputs=: Defined as ="{options.outputPath}"= which resolves to =dist/apps/browser=. The webpack config itself will create the browser-specific subdirectory (e.g., =dist/apps/browser/chrome=). Nx caches the entire =dist/apps/browser= directory, but the hash incorporates the configuration options, ensuring correct cache hits/misses for different variants.
+- =defaultConfiguration=: Set to a common scenario, like =chrome-mv3-dev=.
+- =options=: Defines base settings, including the webpack config path and the base output path.
+- =configurations=: Each key (e.g., =chrome-mv3-dev=) represents a runnable build variant (=nx build browser --configuration=chrome-mv3-dev=). It specifies the =mode=, =browser=, and =manifestVersion= options.
+
+#+begin_src json :tangle apps/browser/project.json
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "browser",
+  "projectType": "application",
+  "sourceRoot": "apps/browser/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "chrome-mv3-prod", 
+      "options": {
+        "outputPath": "dist/apps/browser",
+        "webpackConfig": "apps/browser/webpack.config.js",
+        "tsConfig": "apps/browser/tsconfig.json",
+        "main": "apps/browser/src/popup/index.ts", 
+        "compiler": "tsc",
+        "deleteOutputPath": false 
+      },
+      "configurations": {
+        "chrome-mv3-prod": { "mode": "production", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-prod": { "mode": "production", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-prod": { "mode": "production", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-prod": { "mode": "production", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-prod": { "mode": "production", "browser": "opera", "manifestVersion": 3 },
+        "chrome-mv3-dev": { "mode": "development", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-dev": { "mode": "development", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-dev": { "mode": "development", "browser": "opera", "manifestVersion": 3 }
+      }
+    },
+    "serve": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"], 
+      "defaultConfiguration": "chrome-mv3-dev", 
+      "options": {
+        "outputPath": "dist/apps/browser",
+        "webpackConfig": "apps/browser/webpack.config.js",
+        "tsConfig": "apps/browser/tsconfig.json",
+        "main": "apps/browser/src/popup/index.ts",
+        "compiler": "tsc",
+        "watch": true, 
+        "deleteOutputPath": false
+      },
+      "configurations": {
+        "chrome-mv3-dev": { "mode": "development", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-dev": { "mode": "development", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-dev": { "mode": "development", "browser": "opera", "manifestVersion": 3 }
+      }
+    }
+  }
+}
+
+#+end_src
+
+****** Updating =/apps/browser/package.json=
+Remove the extensive build scripts, as they are replaced by =nx build browser --configuration=<config_name>=.
+
+#+begin_src json :tangle apps/browser/package.json
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension PoC"
+}
+#+end_src
+
+****** Updating =/apps/browser/webpack.config.js=
+This file is now a function that receives the Nx context. It reads =browser=, =manifestVersion=, and =mode= from =context.options= instead of =process.env=. All paths are updated to be relative to the workspace root. The output path construction now uses the base path provided by Nx and appends the browser name.
+
+#+begin_src js :tangle apps/browser/webpack.config.js
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const manifest = require('./webpack/manifest'); 
+
+module.exports = (config, context) => {
+  const browser = context.options.browser || 'chrome';
+  const isProduction = context.options.mode === 'production';
+  const manifestVersion = context.options.manifestVersion || (browser === 'firefox' ? 2 : 3); 
+
+  console.log(`Building for ${browser}, Manifest Version ${manifestVersion}, Mode: ${isProduction ? 'production' : 'development'}`);
+
+  const absoluteBaseOutputPath = path.resolve(context.context.root, context.options.outputPath);
+  const finalOutputPath = path.join(absoluteBaseOutputPath, browser);
+
+  return {
+    mode: isProduction ? 'production' : 'development',
+    devtool: isProduction ? false : 'eval-source-map',
+    entry: {
+      background: 'apps/browser/src/background/index.ts',
+      popup: 'apps/browser/src/popup/index.ts',
+      content: 'apps/browser/src/content/index.ts'
+    },
+    output: {
+      path: finalOutputPath, 
+      filename: '[name].js',
+      clean: true 
+    },
+    resolve: {
+      extensions: ['.ts', '.js'],
+      plugins: [new TsconfigPathsPlugin({
+        configFile: 'tsconfig.base.json'
+      })]
+    },
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          loader: 'ts-loader',
+          exclude: /node_modules/,
+          options: {
+            configFile: 'apps/browser/tsconfig.json'
+          }
+        },
+        {
+          test: /\.(html)$/,
+          use: 'html-loader'
+        }
+      ]
+    },
+    plugins: [
+      new HtmlWebpackPlugin({
+        template: 'apps/browser/src/popup/index.html',
+        filename: 'popup.html',
+        chunks: ['popup']
+      }),
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: manifestVersion === 3 ? 'apps/browser/src/manifest.v3.json' : 'apps/browser/src/manifest.json',
+            to: 'manifest.json',
+            transform: manifest.transform(browser), 
+          },
+          {
+            from: 'apps/browser/src/images',
+            to: 'images'
+          }
+        ]
+      })
+    ],
+  };
+};
+#+end_src
+
+With these changes, you can build specific browser extension variants using commands like:
+- =nx build browser --configuration=chrome-mv3-prod=
+- =nx build browser --configuration=firefox-mv2-dev=
+
+And run in development/watch mode using commands like:
+- =nx serve browser --configuration=chrome-mv3-dev=
+- =nx serve browser --configuration=firefox-mv2-dev=
+
+** References
+
+Much of the Nx-specific information here can be sourced in the following locations:
+
+- [[https://nx.dev/getting-started/intro][The Nx Docs]]
+- [[https://nx.dev/recipes/adopting-nx][Adopting Nx Gradually]]
+- [[https://nx.dev/reference/nx-json][The =nx.json= spec]]
+- [[https://nx.dev/troubleshooting/resolve-circular-dependencies]["Resolving Circular Dependencies"]]
+- [[https://nx.dev/concepts/typescript-project-linking#typescript-project-linking]["Typescipt Project Linking"]]

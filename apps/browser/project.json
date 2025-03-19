@@ -1,0 +1,57 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "browser",
+  "projectType": "application",
+  "sourceRoot": "apps/browser/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "chrome-mv3-prod", // Default build to production
+      "options": {
+        "outputPath": "dist/apps/browser",
+        "webpackConfig": "apps/browser/webpack.config.js",
+        "tsConfig": "apps/browser/tsconfig.json",
+        "main": "apps/browser/src/popup/index.ts", // Entry point hint
+        "compiler": "tsc",
+        "deleteOutputPath": false // Let webpack handle subdirectories
+      },
+      "configurations": {
+        // Production Builds
+        "chrome-mv3-prod": { "mode": "production", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-prod": { "mode": "production", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-prod": { "mode": "production", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-prod": { "mode": "production", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-prod": { "mode": "production", "browser": "opera", "manifestVersion": 3 },
+        // Development Builds
+        "chrome-mv3-dev": { "mode": "development", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-dev": { "mode": "development", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-dev": { "mode": "development", "browser": "opera", "manifestVersion": 3 }
+      }
+    },
+    "serve": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"], 
+      "defaultConfiguration": "chrome-mv3-dev", 
+      "options": {
+        "outputPath": "dist/apps/browser",
+        "webpackConfig": "apps/browser/webpack.config.js",
+        "tsConfig": "apps/browser/tsconfig.json",
+        "main": "apps/browser/src/popup/index.ts",
+        "compiler": "tsc",
+        "watch": true, 
+        "deleteOutputPath": false
+      },
+      "configurations": {
+        "chrome-mv3-dev": { "mode": "development", "browser": "chrome", "manifestVersion": 3 },
+        "firefox-mv2-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 2 },
+        "firefox-mv3-dev": { "mode": "development", "browser": "firefox", "manifestVersion": 3 },
+        "edge-mv3-dev": { "mode": "development", "browser": "edge", "manifestVersion": 3 },
+        "opera-mv3-dev": { "mode": "development", "browser": "opera", "manifestVersion": 3 }
+      }
+    }
+  }
+}

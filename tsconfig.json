@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"]
+    }
+  },
+  "files": [],
+  "include": [],
+  "references": []
+}
