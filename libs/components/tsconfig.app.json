@@ -1,0 +1,14 @@
+cat > libs/components/tsconfig.app.json << 'EOF'
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/app",
+    "types": []
+  },
+  "files": ["src/main.ts", "src/polyfills.ts"],
+  "include": ["src/**/*.d.ts"],
+  "exclude": ["**/*.stories.*"]
+}
+EOF
+git add .
+git commit -m "initilize libs/components/tsconfig.app.json"
