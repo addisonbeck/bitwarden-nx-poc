@@ -1,0 +1,1057 @@
+* Bitwarden Nx PoC [WIP]
+This repository acts as a demonstration of what an effort to introduce Nx to the Bitwarden =clients= monorepo could look like. This PoC serves a few purposes:
+
+1. It allows for developers working on the Nx implementation to see the "full picture" before writing any changes to =clients=.
+2. It serves as a planning tool during pre-development for the purpose of requirements gathering and knowledge assimalation.
+3. It serves as documentation to aid engineers working in =clients= in adapting to and understanding the changes involved in the converstion.
+4. During the development of introducing Nx to =clients= this repository can be used as a playground for experimentation.
+
+** ToC
+:PROPERTIES:
+:TOC:      :include siblings :force (nothing) :ignore (nothing) :local (nothing)
+:END:
+:CONTENTS:
+- [[#whats-nx-why-are-we-introducing-nx-to-the-monorepo][What's Nx? Why are we introducing Nx to the monorepo?]]
+- [[#references][References]]
+- [[#how-to-use-this-poc][How to Use This PoC]]
+- [[#open-questions][Open Questions]]
+- [[#reading-the-commits][Reading the Commits]]
+  - [[#commit-1-setting-up-the-hello-world-monorepository][Commit 1: Setting up the "hello world" monorepository]]
+    - [[#setting-up-the-project-root][Setting up the project root]]
+      - [[#gitignore][/.gitignore]]
+      - [[#packagejson][/package.json]]
+      - [[#tsconfigjson][/tsconfig.json]]
+    - [[#setting-up-libs][Setting up /libs/]]
+      - [[#libsshared][/libs/shared/]]
+        - [[#libssharedtsconfigjson][/libs/shared/tsconfig.json]]
+      - [[#libscommon][/libs/common/]]
+        - [[#libscommonpackagejson][/libs/common/package.json]]
+        - [[#libscommontsconfigjson][/libs/common/tsconfig.json]]
+        - [[#libscommoncommonservicets][/libs/common/common.service.ts]]
+      - [[#libsangular][/libs/angular/]]
+        - [[#libsangularpackagejson][/libs/angular/package.json]]
+        - [[#libsangulartsconfigjson][/libs/angular/tsconfig.json]]
+        - [[#libsangularangularservicets][/libs/angular/angular.service.ts]]
+    - [[#setting-up-apps][Setting up /apps/]]
+      - [[#appsweb][/apps/web/]]
+        - [[#appswebpackagejson][/apps/web/package.json]]
+        - [[#appswebtsconfigjson][/apps/web/tsconfig.json]]
+        - [[#appswebwebpackconfigjs][/apps/web/webpack.config.js]]
+        - [[#appswebindexhtml][/apps/web/index.html]]
+        - [[#appswebindexts][/apps/web/index.ts]]
+      - [[#appsdesktop][/apps/desktop/]]
+        - [[#appsdesktopdistpackagejson][/apps/desktop/dist/package.json]]
+          - [[#document-the-folder-structure-here-it-is-different][Document the folder structure here, it is different]]
+        - [[#appsdesktoppackagejson][/apps/desktop/package.json]]
+          - [[#document-that-these-build-commands-are-more-simple-than-main-and-why][Document that these build commands are more simple than main, and why]]
+        - [[#appsdesktoptsconfigjson][/apps/desktop/tsconfig.json]]
+        - [[#appsdesktopwebpackmainjs][/apps/desktop/webpack.main.js]]
+        - [[#appsdesktopwebpackrendererjs][/apps/desktop/webpack.renderer.js]]
+        - [[#appsdesktopwebpackconfigjs][/apps/desktop/webpack.config.js]]
+        - [[#appsdesktopsrcmainindexts][/apps/desktop/src/main/index.ts]]
+        - [[#appsdesktopsrcrendererindexhtml][/apps/desktop/src/renderer/index.html]]
+        - [[#appsdesktopsrcrendererindexts][/apps/desktop/src/renderer/index.ts]]
+      - [[#appscli][/apps/cli/]]
+        - [[#appsclipackagejson][/apps/cli/package.json]]
+        - [[#appsclitsconfigjson][/apps/cli/tsconfig.json]]
+        - [[#appscliwebpackconfigjs][/apps/cli/webpack.config.js]]
+        - [[#appsclisrcindexts][/apps/cli/src/index.ts]]
+      - [[#appsbrowser][/apps/browser/]]
+        - [[#appsbrowserpackagejson][/apps/browser/package.json]]
+        - [[#appsbrowsertsconfigjson][/apps/browser/tsconfig.json]]
+        - [[#appsbrowserwebpackconfigjs][/apps/browser/webpack.config.js]]
+        - [[#appsbrowsersrcbackgroundindexts][/apps/browser/src/background/index.ts]]
+        - [[#appsbrowsersrcpopupindexhtml][/apps/browser/src/popup/index.html]]
+        - [[#appsbrowsersrcpopupindexts][/apps/browser/src/popup/index.ts]]
+        - [[#appsbrowsersrccontentindexts][/apps/browser/src/content/index.ts]]
+        - [[#appsbrowsermanifestjson][/apps/browser/manifest.json]]
+:END:
+
+** What's Nx? Why are we introducing Nx to the monorepo?
+
+Nx is a build system and set of developer tools designed specifically for monorepo development. It helps manage complex JavaScript/TypeScript projects that contain multiple applications and libraries within a single repository.
+
+Key features of Nx we are looking to take advantage of include:
+
+1. Workspace management
+2. Intelligent build caching 
+3. Dependency management and visualizations
+4. Code generation tools
+5. Targeted build commands from project root
+
+Platform believes introducing Nx will provide improved build efficiency, promote consistent patterns across libs, enable a simpler development workflow, and make it easier to understand and navigate the codebase.
+
+** References
+
+Much of the Nx-specific information here can be sourced in the following locations:
+
+- [[https://nx.dev/getting-started/intro][The Nx Docs]]
+- [[https://nx.dev/recipes/adopting-nx][Adopting Nx Gradually]]
+
+** How to Use This PoC
+
+To use this repository you should take a look at the commit log. The initial commit builds a "hello world" implementation of the =clients= monorepo. Subsequent commits show an incremental conversion to using Nx.
+
+It is the hope of this project that these steps can be followed nearly 1:1 for implementing Nx in the true monorepository.
+
+** Open Questions
+
+Here are some questions that remain open at this stage in development of the PoC:
+
+1. Do we want to use [[https://nx.dev/nx-cloud][Nx cloud]]?
+2. Will the native rust code in desktop cause issues?
+3. Will the connectors scripts for 2FA integrations cause issues?
+4. Will the complex webpack configuration on desktop cause issues?
+5. Why does the storybook component library have [[*/libs/components/tsconfig.app.json][two tsconfigs?]]
+6. Will storybook cause issues with Nx?
+7. Will manifest v2 vs. v3 cause issues in =browser=?
+8. Should this PoC include some CI?
+
+** Reading the Commits
+
+These commits are written as a literate org document. With the proper tooling you could follow along, executing each code block, and recreate this repository from scratch. However, it is easy enough to follow along and read through to understand the important data points here and the changes made to them to facilitate Nx.
+
+*** Commit 1: Setting up the "hello world" monorepository
+
+The first commit creates a monorepository that looks and feels like =clients=. It creates a web app, electron app, browser extension, and CLI using much of the same configuration as =clients= (respective to the current date). 
+
+**** Setting up the project root
+***** =/.gitignore=
+
+#+begin_src text :tangle .gitignore
+node_modules
+#+end_src
+
+***** =/package.json=
+
+Next we'll initialize the root level =package.json=. It needs to contain all the dependencies from across the project. It also needs to contain build scripts for running each project.
+
+#+begin_src json :tangle package.json
+{
+  "name": "bitwarden-clients-poc",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/**/*"
+  ],
+  "scripts": {
+    "build": "npm run build:libs && npm run build:apps",
+    "build:libs": "npm run build:common && npm run build:platform",
+    "build:common": "cd libs/common && npm run build",
+    "build:platform": "cd libs/platform && npm run build",
+    "build:apps": "npm run build:web && npm run build:browser && npm run build:desktop",
+    "browser:build:watch": "cd apps/browser && npm run build --watch",
+    "build:desktop": "cd apps/desktop && npm run build",
+    "build:desktop": "node ./scripts/start.js"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.280",
+    "concurrently": "9.1.2",
+    "copy-webpack-plugin": "12.0.2",
+    "cross-env": "7.0.3",
+    "electron": "34.0.0",
+    "electron-builder": "24.13.3",
+    "electron-log": "5.2.4",
+    "electron-reload": "2.0.0-alpha.1",
+    "electron-store": "8.2.0",
+    "electron-updater": "6.3.9",
+    "html-loader": "5.1.0",
+    "html-webpack-plugin": "5.6.3",
+    "ts-loader": "9.5.2",
+    "tsconfig-paths-webpack-plugin": "4.2.0",
+    "typescript": "5.4.2",
+    "webpack": "5.97.1",
+    "webpack-cli": "6.0.1",
+    "webpack-dev-server": "5.2.0",
+    "webpack-dev-server": "5.2.0",
+    "webpack-node-externals": "3.0.0"
+  },
+  "dependencies": {
+    "@angular/animations": "18.2.13",
+    "@angular/cdk": "18.2.14",
+    "@angular/common": "18.2.13",
+    "@angular/compiler": "18.2.13",
+    "@angular/core": "18.2.13",
+    "@angular/forms": "18.2.13",
+    "@angular/platform-browser": "18.2.13",
+    "@angular/platform-browser-dynamic": "18.2.13",
+    "@angular/router": "18.2.13",
+    "commander": "11.1.0",
+    "node-fetch": "2.6.12",
+    "node-forge": "1.3.1"
+  },
+  "engines": {
+    "node": "~20",
+    "npm": "~10"
+  }
+}
+#+end_src
+
+***** =/tsconfig.json=
+
+Next we'll initilize the root tsconfig.json. It needs to set up targets, paths, and includes.
+
+#+begin_src json :tangle tsconfig.json
+{
+  "compilerOptions": {
+    "strict": false,
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES2016",
+    "module": "ES2020",
+    "lib": ["es5", "es6", "es7", "dom", "ES2021", "ESNext.Disposable"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": false,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"],
+      "@bitwarden/components/*": ["./libs/components/src/*"]
+    },
+  },
+  "include": [
+    "apps/web/src/**/*",
+    "libs/*/src/**/*"
+  ]
+}
+#+end_src
+
+**** Setting up =/libs/=
+=libs= is a core component of the bitwarden monorepo and holds all shared code across clients. This directory holds independently buildable libraries that may have some level of dependency on one another. We've stubbed out a few examples for the PoC, but this isn't a 1:1 recreation of =clients=.
+***** =/libs/shared/=
+****** =/libs/shared/tsconfig.json=
+
+Libs maintains a parent =tsconfig.json= that is inheritted by others. 
+
+#+begin_src json :tangle libs/shared/tsconfig.json :mkdirp yes
+{
+  "compilerOptions": {
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES6",
+    "module": "es2020",
+    "lib": ["es5", "es6", "es7", "dom"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "dist",
+    "plugins": [
+      {
+        "name": "typescript-strict-plugin"
+      }
+    ]
+  }
+}
+#+end_src
+
+***** =/libs/common/=
+****** =/libs/common/package.json=
+
+#+begin_src json :tangle libs/common/package.json :mkdirp yes
+{
+  "name": "@bitwarden/common",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0",
+  "scripts": {
+    "build": "npm run clean && tsc"
+  }
+}
+#+end_src
+
+****** =/libs/common/tsconfig.json=
+
+And then =tsconfig.json=. This references the root config.
+
+#+begin_src json :tangle libs/common/tsconfig.json :mkdirp yes
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/libs/common/common.service.ts=
+
+Next we'll create an entrypoint for the =common= lib. It should serves as a "Hello World" for the library. It also acts as a dependency for other libs.
+
+#+begin_src ts :tangle libs/common/common.service.ts :mkdirp yes
+export class CommonService {
+  getMessage(lib: string = "common"): string {
+    return `Hello from the ${lib} library!`;
+  }
+}
+#+end_src
+
+***** =/libs/angular/=
+****** =/libs/angular/package.json=
+
+#+begin_src json :tangle libs/angular/package.json :mkdirp yes
+{
+  "name": "@bitwarden/angular",
+  "version": "0.0.0",
+  "description": "Common code used across Bitwarden JavaScript projects.",
+  "keywords": [
+    "bitwarden"
+  ],
+  "author": "Bitwarden Inc.",
+  "homepage": "https://bitwarden.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitwarden/jslib"
+  },
+  "license": "GPL-3.0",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
+    "build:watch": "npm run clean && tsc -watch"
+  }
+}
+#+end_src
+
+****** =/libs/angular/tsconfig.json=
+
+One important thing to note: we should be able to reference libs inside each other like this.
+
+#+begin_src json :tangle libs/angular/tsconfig.json :mkdirp yes
+{
+  "extends": "../shared/tsconfig",
+  "compilerOptions": {
+    "paths": {
+      "@bitwarden/common/*": ["../common/src/*"]
+    }
+  },
+  "include": ["src", "spec"],
+  "exclude": ["node_modules", "dist"]
+}
+#+end_src
+
+****** =/libs/angular/angular.service.ts=
+
+#+begin_src ts :tangle libs/angular/angular.service.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+export class AngularService {
+  private commonService = new CommonService();
+
+  getMessage(): string {
+    return this.commonService.getMessage("angular");
+  }
+}
+#+end_src
+
+**** Setting up =/apps/=
+***** =/apps/web/=
+****** =/apps/web/package.json=
+#+begin_src json :tangle apps/web/package.json :mkdirp yes
+{
+  "name": "@bitwarden/web",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "webpack serve"
+  }
+}
+#+end_src
+****** =/apps/web/tsconfig.json=
+#+begin_src json :tangle apps/web/tsconfig.json :mkdirp yes
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"],
+    }
+  }
+}
+#+end_src
+
+****** =/apps/web/webpack.config.js=
+#+begin_src js :tangle apps/web/webpack.config.js :mkdirp yes
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/index.ts',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/index.html',
+    }),
+  ],
+  devServer: {
+    static: './dist',
+    hot: true,
+  },
+};
+#+end_src
+
+****** =/apps/web/index.html=
+
+#+begin_src html :tangle apps/web/src/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden Web PoC</title>
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Web</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/web/index.ts=
+
+#+begin_src ts :tangle apps/web/src/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service'
+import { AngularService } from '@bitwarden/angular/angular.service'
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+***** =/apps/desktop/=
+
+****** =/apps/desktop/dist/package.json=
+
+#+begin_src json :tangle apps/desktop/dist/package.json :mkdirp yes
+{
+  "name": "bitwarden-desktop-app",
+  "main": "main.js"
+}
+#+end_src
+
+******* TODO Document the folder structure here, it is different
+
+****** =/apps/desktop/package.json=
+
+#+begin_src json :tangle apps/desktop/package.json :mkdirp yes
+{
+  "name": "@bitwarden/desktop",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "concurrently \"webpack --watch\" \"electron dist\""
+  }
+}
+#+end_src
+
+******* TODO Document that these build commands are more simple than main, and why
+
+****** =/apps/desktop/tsconfig.json=
+#+begin_src json :tangle apps/desktop/tsconfig.json :mkdirp yes
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  }
+}
+#+end_src
+
+****** =/apps/desktop/webpack.main.js=
+#+begin_src js :tangle apps/desktop/webpack.main.js :mkdirp yes
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/main/index.ts',
+  target: 'electron-main',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+};
+#+end_src
+
+****** =/apps/desktop/webpack.renderer.js=
+#+begin_src js :tangle apps/desktop/webpack.renderer.js :mkdirp yes
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+
+module.exports = {
+  entry: './src/renderer/index.ts',
+  target: 'electron-renderer',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'renderer.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/renderer/index.html',
+    }),
+  ],
+};
+#+end_src
+
+****** =/apps/desktop/webpack.config.js=
+
+This config re-exports the main and renderer configs. This isn't a thing on =main= but is a simple helper here.
+
+#+begin_src js :tangle apps/desktop/webpack.config.js :mkdirp yes
+const mainConfig = require('./webpack.main');
+const rendererConfig = require('./webpack.renderer');
+
+module.exports = [mainConfig, rendererConfig];
+#+end_src
+
+****** =/apps/desktop/src/main/index.ts=
+#+begin_src ts :tangle apps/desktop/src/main/index.ts :mkdirp yes
+import { app, BrowserWindow } from 'electron';
+import * as path from 'path';
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+let mainWindow: BrowserWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  console.log(commonService.getMessage('desktop-main'));
+}
+
+app.whenReady().then(() => {
+  createWindow();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+#+end_src
+
+****** =/apps/desktop/src/renderer/index.html=
+#+begin_src html :tangle apps/desktop/src/renderer/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden Desktop PoC</title>
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Desktop</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/desktop/src/renderer/index.ts=
+#+begin_src ts :tangle apps/desktop/src/renderer/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+import { AngularService } from '@bitwarden/angular/angular.service';
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+***** =/apps/cli/=
+****** =/apps/cli/package.json=
+
+The CLI app has its own npm scripts for building and running the application.
+
+#+begin_src json :tangle apps/cli/package.json :mkdirp yes
+{
+  "name": "@bitwarden/cli",
+  "version": "0.0.1",
+  "description": "Bitwarden CLI PoC",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "webpack",
+    "start": "node build/index.js"
+  }
+}
+#+end_src
+
+****** =/apps/cli/tsconfig.json=
+
+The CLI requires Node.js module format and specific paths for the library dependencies.
+
+#+begin_src json :tangle apps/cli/tsconfig.json :mkdirp yes
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "target": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/apps/cli/webpack.config.js=
+
+The CLI webpack configuration is simpler as it's for a Node.js application without browser components.
+
+#+begin_src js :tangle apps/cli/webpack.config.js :mkdirp yes
+const path = require('path');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = {
+  entry: './src/index.ts',
+  target: 'node',
+  mode: 'development',
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()],
+  },
+  output: {
+    filename: 'index.js',
+    path: path.resolve(__dirname, 'build'),
+  },
+  externals: [nodeExternals()],
+  node: {
+    __dirname: false,
+    __filename: false,
+  }
+};
+#+end_src
+
+****** =/apps/cli/src/index.ts=
+
+The CLI entrypoint implements a simple command-line interface using Commander, similar to the real Bitwarden CLI.
+
+#+begin_src ts :tangle apps/cli/src/index.ts :mkdirp yes
+import { Command } from 'commander';
+import { CommonService } from '@bitwarden/common/common.service';
+
+const program = new Command();
+const commonService = new CommonService();
+
+program
+  .name('bw')
+  .description('Bitwarden Command-line Interface (Nx PoC)')
+  .version('0.0.1');
+
+program
+  .command('hello')
+  .description('Test connection to libraries')
+  .action(() => {
+    console.log(commonService.getMessage());
+  });
+
+program
+  .command('*', { hidden: true })
+  .action((cmd) => {
+    console.error(`Unknown command: ${cmd}`);
+    program.help();
+  });
+
+program.parse(process.argv);
+
+if (process.argv.length <= 2) {
+  program.help();
+}
+#+end_src
+
+***** =/apps/browser/=
+The browser extension is a complex application that requires special considerations for each browser and different manifest versions.
+
+One important thing to note about the extension: icons are required by browsers. These have been committed directely to the repo and are not tangled from this README.
+****** =/apps/browser/package.json=
+#+begin_src json :tangle apps/browser/package.json :mkdirp yes
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "webpack --watch",
+    "build:dev": "cross-env NODE_ENV=development webpack",
+    "build:prod": "cross-env NODE_ENV=production webpack",
+    "build:chrome": "cross-env BROWSER=chrome webpack",
+    "build:firefox": "cross-env BROWSER=firefox webpack",
+    "build:opera": "cross-env BROWSER=opera webpack",
+    "build:edge": "cross-env BROWSER=edge webpack"
+  }
+}
+#+end_src
+
+****** =/apps/browser/tsconfig.json=
+#+begin_src json :tangle apps/browser/tsconfig.json :mkdirp yes
+{
+  "extends": "../../libs/shared/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "ES2020",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/common/*": ["../../libs/common/src/*"],
+      "@bitwarden/angular/*": ["../../libs/angular/src/*"]
+    },
+    "types": ["chrome"]
+  },
+  "include": ["src/**/*"]
+}
+#+end_src
+
+****** =/apps/browser/webpack.config.js=
+This webpack configuration handles the complexity of building different browser extension variants and managing content scripts, background scripts, and popup interfaces.
+
+#+begin_src js :tangle apps/browser/webpack.config.js :mkdirp yes
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+
+const browser = process.env.BROWSER || 'chrome';
+const isProduction = process.env.NODE_ENV === 'production';
+
+module.exports = {
+  mode: isProduction ? 'production' : 'development',
+  devtool: isProduction ? 'source-map' : 'eval-source-map',
+  entry: {
+    background: './src/background/index.ts',
+    popup: './src/popup/index.ts',
+    content: './src/content/index.ts'
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist', browser),
+    filename: '[name].js'
+  },
+  resolve: {
+    extensions: ['.ts', '.js'],
+    plugins: [new TsconfigPathsPlugin()]
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        use: 'ts-loader',
+        exclude: /node_modules/
+      },
+      {
+        test: /\.(html)$/,
+        use: 'html-loader'
+      }
+    ]
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/popup/index.html',
+      filename: 'popup.html',
+      chunks: ['popup']
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        { 
+          from: './src/manifest.json',
+          to: '.'
+        },
+        { 
+          from: './src/images',
+          to: 'images'
+        }
+      ]
+    })
+  ]
+};
+#+end_src
+
+****** =/apps/browser/src/background/index.ts=
+#+begin_src ts :tangle apps/browser/src/background/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+console.log(commonService.getMessage());
+
+chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void) => {
+  if (message.action === 'getHello') {
+    sendResponse({ message: commonService.getMessage('browser-background') });
+  }
+  return true;
+});
+#+end_src
+
+****** =/apps/browser/src/popup/index.html=
+#+begin_src html :tangle apps/browser/src/popup/index.html :mkdirp yes
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitwarden</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <div id="app">
+    <h1>Bitwarden Browser Extension</h1>
+    <div id="commonMessage"></div>
+    <div id="angularMessage"></div>
+  </div>
+</body>
+</html>
+#+end_src
+
+****** =/apps/browser/src/popup/index.ts=
+#+begin_src ts :tangle apps/browser/src/popup/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+import { AngularService } from '@bitwarden/angular/angular.service';
+
+const commonService = new CommonService();
+const angularService = new AngularService();
+
+document.getElementById('commonMessage').textContent = commonService.getMessage();
+document.getElementById('angularMessage').textContent = angularService.getMessage();
+#+end_src
+
+****** =/apps/browser/src/content/index.ts=
+#+begin_src ts :tangle apps/browser/src/content/index.ts :mkdirp yes
+import { CommonService } from '@bitwarden/common/common.service';
+
+const commonService = new CommonService();
+
+console.log(commonService.getMessage('browser-content'));
+#+end_src
+
+****** =/apps/browser/manifest.json=
+#+begin_src json :tangle apps/browser/src/manifest.json :mkdirp yes
+{
+  "manifest_version": 3,
+  "name": "Bitwarden - Free Password Manager",
+  "short_name": "Bitwarden",
+  "version": "0.0.1",
+  "description": "A secure and free password manager for all your devices.",
+  "homepage_url": "https://bitwarden.com",
+  "icons": {
+    "16": "images/icon16.png",
+    "32": "images/icon32.png",
+    "48": "images/icon48.png",
+    "96": "images/icon96.png",
+    "128": "images/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "32": "images/icon32.png",
+      "48": "images/icon48.png",
+      "96": "images/icon96.png",
+      "128": "images/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ]
+}
+#+end_src
+
+****** =/apps/browser/webpack/manifest.js=
+This file handles the transformation of manifests for different browsers and versions.
+
+#+begin_src js :tangle apps/browser/webpack/manifest.js
+const supportedBrowsers = ['chrome', 'firefox', 'opera', 'edge', 'safari'];
+
+function transform(content, browser, manifestVersion) {
+  let manifest = JSON.parse(content);
+  
+  // Handle browser-specific transformations
+  manifest = transformBrowserSpecific(manifest, browser);
+  
+  // Handle manifest version-specific changes
+  manifest = transformManifestVersion(manifest, manifestVersion, browser);
+  
+  return JSON.stringify(manifest, null, 2);
+}
+
+function transformBrowserSpecific(manifest, browser) {
+  const prefix = `__${browser}__`;
+  
+  function transformObject(obj) {
+    const result = {};
+    
+    for (const [key, value] of Object.entries(obj)) {
+      // Handle browser-specific keys
+      if (key.startsWith('__') && key.endsWith('__')) {
+        const browserKey = key.slice(2, -2);
+        if (browserKey === browser) {
+          Object.assign(result, transformObject(value));
+        }
+        continue;
+      }
+      
+      // Keep non-browser-specific keys
+      if (!supportedBrowsers.some(b => key.startsWith(`__${b}__`))) {
+        result[key] = typeof value === 'object' && value !== null 
+          ? transformObject(value) 
+          : value;
+      }
+    }
+    
+    return result;
+  }
+  
+  return transformObject(manifest);
+}
+
+function transformManifestVersion(manifest, version, browser) {
+  if (version === 3) {
+    // Transform V2 to V3 if needed
+    if (manifest.manifest_version === 2) {
+      manifest = {
+        ...manifest,
+        manifest_version: 3,
+        // Transform background
+        background: browser === 'firefox' 
+          ? { scripts: ['background.js'] }
+          : { service_worker: 'background.js' },
+        // Transform browser_action to action
+        action: manifest.browser_action,
+        // Transform web_accessible_resources
+        web_accessible_resources: [{
+          resources: manifest.web_accessible_resources || [],
+          matches: ['<all_urls>']
+        }],
+        // Add host_permissions
+        host_permissions: ['<all_urls>', '*://*/*'],
+      };
+      delete manifest.browser_action;
+    }
+  } else {
+    // Ensure V2 format
+    manifest = {
+      ...manifest,
+      manifest_version: 2,
+      browser_action: manifest.action,
+    };
+    delete manifest.action;
+  }
+  
+  return manifest;
+}
+
+module.exports = { transform };
+#+end_src

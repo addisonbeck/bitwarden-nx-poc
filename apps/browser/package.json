@@ -1,0 +1,15 @@
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "webpack --watch",
+    "build:dev": "cross-env NODE_ENV=development webpack",
+    "build:prod": "cross-env NODE_ENV=production webpack",
+    "build:chrome": "cross-env BROWSER=chrome webpack",
+    "build:firefox": "cross-env BROWSER=firefox webpack",
+    "build:opera": "cross-env BROWSER=opera webpack",
+    "build:edge": "cross-env BROWSER=edge webpack"
+  }
+}
