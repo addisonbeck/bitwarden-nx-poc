@@ -50,7 +50,7 @@ Nx is a build system and set of developer tools designed specifically for monore
 Key features of Nx we are looking to take advantage of (right now) include:
 
 - *Unified Commands:* Instead of =cd=-ing into specific app/lib directories and running =npm run build=, you'll run commands like =nx serve web --configuration=bit=, =nx build desktop=, and =nx test common= from the *repository root*.
-- *Build Caching:* Nx automatically caches build results. If code and dependencies haven't changed, subsequent builds will be significantly faster, often restoring results from cache instantly. Nix stores caches in =./.nx/=.
+- *Build Caching:* Nx automatically caches build results. If code and dependencies haven't changed, subsequent builds will be significantly faster, often restoring results from cache instantly. Nx stores caches in =./.nx/=.
 - *Project Configuration:* Each app and library gets a =project.json= file defining its build targets (like =build=, =serve=, =lint=) and dependencies. This replaces many scripts previously defined in individual =package.json= files.
 - *Dependency Management:* Each lib and app are now more independent *projects*. Nx understands the dependencies between projects. Running =nx build web --configuration=bit= will automatically build =libs/common= and =libs/angular= first if needed. You can visualize this with =nx graph=.
 
