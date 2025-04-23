@@ -21,6 +21,7 @@
     "electron-reload": "2.0.0-alpha.1",
     "electron-store": "8.2.0",
     "electron-updater": "6.3.9",
+    "nx": "20.7.1",
     "html-loader": "5.1.0",
     "html-webpack-plugin": "5.6.3",
     "ts-loader": "9.5.2",
