@@ -11,8 +11,5 @@
     "type": "git",
     "url": "https://github.com/bitwarden/jslib"
   },
-  "license": "GPL-3.0",
-  "scripts": {
-    "build": "npm run clean && tsc"
-  }
+  "license": "GPL-3.0"
 }
