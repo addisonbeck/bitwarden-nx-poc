@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "angular",
+  "projectType": "library",
+  "sourceRoot": "libs/angular/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/angular",
+        "main": "libs/angular/src/angular.service.ts",
+        "tsConfig": "libs/angular/tsconfig.json",
+        "assets": ["libs/angular/*.md"] 
+      }
+    }
+  }
+}
