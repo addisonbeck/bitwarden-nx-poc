@@ -11,6 +11,10 @@
     "lint:fix": "eslint . --cache --cache-strategy content --fix"
   },
   "devDependencies": {
+    "@nx/eslint": "20.7.1", 
+    "@nx/js": "20.7.1", 
+    "@nx/node": "20.7.1", 
+    "@nx/webpack": "20.7.1",
     "@types/chrome": "0.0.280",
     "concurrently": "9.1.2",
     "copy-webpack-plugin": "12.0.2",
@@ -27,9 +31,9 @@
     "ts-loader": "9.5.2",
     "tsconfig-paths-webpack-plugin": "4.2.0",
     "typescript": "5.4.2",
+    "wait-on": "8.0.3", 
     "webpack": "5.97.1",
     "webpack-cli": "6.0.1",
-    "webpack-dev-server": "5.2.0",
     "webpack-dev-server": "5.2.0",
     "webpack-node-externals": "3.0.0"
   },
