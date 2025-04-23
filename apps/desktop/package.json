@@ -1,0 +1,8 @@
+{
+  "name": "@bitwarden/desktop",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "webpack",
+    "build:watch": "concurrently \"webpack --watch\" \"electron dist\""
+  }
+}

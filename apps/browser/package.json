@@ -1,0 +1,25 @@
+{
+  "name": "@bitwarden/browser",
+  "version": "0.0.1",
+  "description": "Bitwarden Browser Extension PoC",
+  "scripts": {
+    "build": "npm run build:chrome",
+    "build:dev": "cross-env NODE_ENV=development npm run build",
+    "build:prod": "cross-env NODE_ENV=production npm run build",
+    "build:watch": "npm run build:chrome -- --watch",
+
+    "build:chrome": "cross-env BROWSER=chrome MANIFEST_VERSION=3 webpack",
+    "build:watch:chrome": "npm run build:chrome -- --watch",
+
+    "build:firefox": "cross-env BROWSER=firefox webpack",
+    "build:watch:firefox": "npm run build:firefox -- --watch",
+    "build:firefox:mv3": "cross-env BROWSER=firefox MANIFEST_VERSION=3 webpack",
+    "build:watch:firefox:mv3": "npm run build:firefox:mv3 -- --watch",
+
+    "build:edge": "cross-env BROWSER=edge MANIFEST_VERSION=3 webpack",
+    "build:watch:edge": "npm run build:edge -- --watch",
+
+    "build:opera": "cross-env BROWSER=opera MANIFEST_VERSION=3 webpack",
+    "build:watch:opera": "npm run build:opera -- --watch"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "strict": false,
+    "pretty": true,
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "target": "ES2016",
+    "module": "ES2020",
+    "lib": ["es5", "es6", "es7", "dom", "ES2021", "ESNext.Disposable"],
+    "sourceMap": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": false,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "resolveJsonModule": true,
+    "paths": {
+      "@bitwarden/angular/*": ["./libs/angular/src/*"],
+      "@bitwarden/common/*": ["./libs/common/src/*"]
+    },
+  },
+  "include": [
+    "apps/web/src/**/*",
+    "libs/*/src/**/*"
+  ]
+}
