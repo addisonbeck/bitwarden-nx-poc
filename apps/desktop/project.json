@@ -1,0 +1,51 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "desktop",
+  "projectType": "application",
+  "sourceRoot": "apps/desktop/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/desktop",
+        "webpackConfig": "apps/desktop/webpack.config.js",
+        "tsConfig": "apps/desktop/tsconfig.json",
+        "main": "apps/desktop/src/main/index.ts",
+        "compiler": "tsc"
+      },
+      "configurations": {
+        "development": {
+          "mode": "development"
+        },
+        "production": {
+          "mode": "production"
+        }
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "defaultConfiguration": "development",
+      "options": {
+        "cwd": ".",
+        "parallel": true,
+        "commands": [
+           "nx build desktop --watch --mode=development",
+           "wait-on dist/apps/desktop/main.js && electron dist/apps/desktop"
+        ],
+        "readyWhen": "Watching for file changes..." 
+      },
+       "configurations": {
+         "development": {},
+         "production": {
+            "commands": [
+               "nx build desktop --watch --mode=production",
+               "wait-on dist/apps/desktop/main.js && electron dist/apps/desktop"
+            ]
+         }
+      }
+    }
+  }
+}
